@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin · Guess the Archetype</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <!-- login gate -->
+  <section id="login" class="admin-login">
+    <div class="mark" aria-hidden="true" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--ter-pink);margin:0 auto 14px;"></div>
+    <h2>Admin</h2>
+    <p>Transform-ER · Guess the Archetype configuration</p>
+    <input id="pwd" type="password" placeholder="Password" autocomplete="current-password" />
+    <button class="btn" id="pwd-go">Unlock</button>
+    <div id="pwd-err" class="counter" style="margin-top:10px;color:var(--light-pink);display:none;"></div>
+  </section>
+
+  <!-- main admin -->
+  <div id="admin" class="admin-shell" style="display:none;">
+    <header class="site-header">
+      <div class="mark" aria-hidden="true"></div>
+      <div>
+        <div class="sub">Transform-ER · Admin</div>
+        <h1>Manage archetypes</h1>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <a class="btn ghost" href="index.html">← Back to game</a>
+      </div>
+    </header>
+
+    <div class="admin-grid">
+      <!-- Sidebar: list of types -->
+      <aside class="admin-panel">
+        <h3>Types</h3>
+        <div class="admin-filter" id="filter">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="nonstd">Non‑standard</button>
+          <button class="chip" data-filter="trad">Traditional</button>
+        </div>
+        <input id="search" type="text" placeholder="Search by name or code…" style="width:100%;background:rgba(0,0,0,0.2);border:1px solid var(--border);color:var(--white);border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:10px;" />
+        <div class="admin-list" id="list"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn blue" id="btn-new-nonstd">+ Non‑standard</button>
+          <button class="btn" id="btn-new-trad">+ Traditional</button>
+        </div>
+      </aside>
+
+      <!-- Editor -->
+      <section class="admin-panel">
+        <h3 id="editor-title">Select a type to edit</h3>
+        <div id="editor" style="display:none;">
+          <div class="admin-form" id="form">
+            <div>
+              <label>Code</label>
+              <input id="e-code" type="text" />
+            </div>
+            <div>
+              <label>Name</label>
+              <input id="e-name" type="text" />
+            </div>
+            <div>
+              <label>Class</label>
+              <select id="e-class">
+                <option value="TRAD">Traditional</option>
+                <option value="MET">Metal Frame (MET)</option>
+                <option value="PCC">Precast Concrete (PCC)</option>
+                <option value="ISC">In-Situ Concrete (ISC)</option>
+                <option value="TIM">Timber Frame (TIM)</option>
+              </select>
+            </div>
+            <div>
+              <label>Number built</label>
+              <input id="e-built" type="number" min="0" />
+            </div>
+            <div>
+              <label>Period built from</label>
+              <input id="e-from" type="number" min="1800" max="2100" />
+            </div>
+            <div>
+              <label>Period built to</label>
+              <input id="e-to" type="number" min="1800" max="2100" />
+            </div>
+            <div class="full">
+              <label><input id="e-defective" type="checkbox" /> Designated defective (Housing Defects Act 1984)</label>
+            </div>
+            <div class="full">
+              <label>Description / clue shown on the card</label>
+              <textarea id="e-desc" rows="3"></textarea>
+            </div>
+            <div class="full">
+              <label>Photos (max ~1MB each — stored locally, included in export)</label>
+              <input id="e-photo-file" type="file" accept="image/*" multiple />
+              <div class="admin-photos" id="e-photos"></div>
+            </div>
+          </div>
+
+          <div class="admin-bar">
+            <button class="btn secondary" id="btn-delete">Delete type</button>
+            <button class="btn" id="btn-save">Save</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="admin-panel" style="margin-top:24px;">
+      <h3>Data</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:-4px;">
+        Admin edits live in this browser's local storage. Export a JSON snapshot to share it with another device or bake it into the deployed app
+        (replace <code>types.json</code> in the workspace folder).
+      </p>
+      <div class="admin-bar">
+        <button class="btn ghost" id="btn-reset">Reset to shipped types.json</button>
+        <button class="btn secondary" id="btn-import">Import JSON…</button>
+        <input id="import-file" type="file" accept="application/json" style="display:none;" />
+        <button class="btn blue" id="btn-export">Export types.json</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="config.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

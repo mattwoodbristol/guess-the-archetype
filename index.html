@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guess the Archetype — Transform-ER</title>
+  <meta name="description" content="A quick flashcard game about UK non-traditional social housing, for the Transform-ER consortium." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="app-shell">
+
+    <header class="site-header">
+      <div class="mark" aria-hidden="true"></div>
+      <div>
+        <div class="sub">Transform-ER</div>
+        <h1>Guess the Archetype</h1>
+      </div>
+    </header>
+
+    <!-- ================= Intro screen ================= -->
+    <section id="screen-intro" class="screen active">
+      <div class="hero">
+        <div class="eyebrow">Consortium game · 2 minutes</div>
+        <h2>Do you know your <span class="accent">non‑traditional</span> social housing?</h2>
+        <p class="lede">
+          A quick flashcard round through the UK's post‑war system‑built stock — Wimpey No‑Fines, Airey, BISF and the rest.
+          We'll also ask whether you own any traditional archetypes and what you call them. Your answers help Transform‑ER
+          build a clearer picture of retrofit‑ready homes across the country.
+        </p>
+
+        <form id="intro-form" class="intro-form" autocomplete="on" novalidate>
+          <div>
+            <label for="f-name">Full name *</label>
+            <input id="f-name" name="name" type="text" required autocomplete="name" />
+          </div>
+          <div>
+            <label for="f-org">Organisation *</label>
+            <input id="f-org" name="org" type="text" required autocomplete="organization" />
+          </div>
+          <div>
+            <label for="f-role">Role</label>
+            <input id="f-role" name="role" type="text" autocomplete="organization-title" />
+          </div>
+          <div>
+            <label for="f-org-location">Primary location of organisation *</label>
+            <input id="f-org-location" name="orgLocation" type="text" placeholder="e.g. Manchester, North West" required />
+          </div>
+          <div>
+            <label for="f-email">Email *</label>
+            <input id="f-email" name="email" type="email" required autocomplete="email" />
+          </div>
+          <div>
+            <label for="f-phone">Phone (optional)</label>
+            <input id="f-phone" name="phone" type="tel" autocomplete="tel" />
+          </div>
+
+          <div class="consent">
+            By playing you agree that Transform‑ER can contact you about this project and store the portfolio data you provide.
+            Your contact details are not shown on the public leaderboard.
+          </div>
+
+          <div class="btn-row">
+            <button type="submit" class="btn" id="intro-submit">Start the game</button>
+            <span id="intro-error" class="counter" style="color: var(--light-pink); display:none;"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="footer">Transform · Engage · Retrofit — 13 partners, 1 million homes/year by 2030</div>
+    </section>
+
+    <!-- ================= Game screen ================= -->
+    <section id="screen-game" class="screen">
+      <div class="game-top">
+        <div class="progress"><span id="progress-bar"></span></div>
+        <div class="counter"><span id="counter-current">1</span> / <span id="counter-total">20</span></div>
+        <div class="score-pill">Score <strong id="score-now">0</strong></div>
+      </div>
+      <div id="card-mount"></div>
+    </section>
+
+    <!-- ================= End screen ================= -->
+    <section id="screen-end" class="screen">
+      <div class="end-hero">
+        <div class="verdict" id="end-verdict">Nicely done</div>
+        <h2 id="end-title">Round complete</h2>
+        <div class="score"><span id="end-score">0</span><small>/<span id="end-total">16</span></small></div>
+        <div class="counter" id="end-subline">non‑standard identified correctly</div>
+        <div class="end-actions">
+          <button class="btn" id="btn-replay">Play again</button>
+          <button class="btn secondary" id="btn-share">Copy shareable result</button>
+        </div>
+      </div>
+
+      <div class="leaderboard">
+        <h3>Leaderboard · top players</h3>
+        <div id="leaderboard-mount">
+          <div class="empty">Loading leaderboard…</div>
+        </div>
+      </div>
+
+      <div class="footer">Thanks for contributing to the Transform‑ER portfolio picture.</div>
+    </section>
+
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <!-- Templates -->
+  <template id="tpl-card-mcq">
+    <article class="card">
+      <div class="photo">
+        <span class="tag">Non‑standard · <span class="cls"></span></span>
+        <div class="placeholder">
+          <div class="dot-ring"></div>
+          <div>Photo placeholder</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="hint">Which system is this?</div>
+        <h3 class="prompt">Pick one of the four below</h3>
+        <div class="options"></div>
+        <div class="reveal">
+          <h4 id="reveal-title">Correct answer</h4>
+          <div class="fact"></div>
+          <div class="meta"></div>
+        </div>
+        <div class="actions" style="display:none;">
+          <button class="btn next">Next card →</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <template id="tpl-card-trad">
+    <article class="card">
+      <div class="photo">
+        <span class="tag trad">Traditional</span>
+        <div class="placeholder">
+          <div class="dot-ring"></div>
+          <div class="placeholder-label">Traditional archetype</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="hint">Quick portfolio check</div>
+        <h3 class="prompt">Traditional archetype</h3>
+        <p class="fact" style="color: rgba(255,255,255,0.82); margin: 0 0 16px;"></p>
+
+        <div class="trad-fields">
+          <div class="row">
+            <label>Do you have any in your portfolio?</label>
+            <div class="choices has">
+              <button type="button" class="chip" data-value="yes">Yes</button>
+              <button type="button" class="chip" data-value="no">No</button>
+              <button type="button" class="chip" data-value="unsure">Not sure</button>
+            </div>
+          </div>
+          <div class="row how-many" style="display:none;">
+            <label>Roughly how many?</label>
+            <div class="choices count">
+              <button type="button" class="chip" data-value="1-50">1–50</button>
+              <button type="button" class="chip" data-value="51-250">51–250</button>
+              <button type="button" class="chip" data-value="251-1000">251–1,000</button>
+              <button type="button" class="chip" data-value="1001-5000">1,001–5,000</button>
+              <button type="button" class="chip" data-value="5000+">5,000+</button>
+            </div>
+          </div>
+          <div class="row bespoke" style="display:none;">
+            <label>Your bespoke archetype name for this type</label>
+            <input type="text" class="bespoke-input" placeholder="e.g. Victorian Terrace - Phase 2" />
+          </div>
+          <div class="row locations" style="display:none;">
+            <label>Location(s) of these properties</label>
+            <input type="text" class="locations-input" placeholder="e.g. Salford, Trafford, Oldham" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn next">Next card →</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
