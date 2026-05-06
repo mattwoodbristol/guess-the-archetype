@@ -89,13 +89,38 @@
       // Load shipped version
       try {
         const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
-        state.data = await res.json();
+        const parsed = await res.json();
         // Ensure structure
-        state.data.traditional = state.data.traditional || [];
-        state.data.version = state.data.version || CFG.DATA_VERSION;
+        parsed.traditional = parsed.traditional || [];
+        parsed.version = parsed.version || CFG.DATA_VERSION;
+        state.data = parsed;
       } catch (e) {
         state.data = { nonStandard: [], traditional: [], version: CFG.DATA_VERSION };
         toast('Could not load types.json — starting blank.');
+      }
+    }
+
+    // Auto-load photos from types.json if localStorage has none yet
+    // This means photos baked into the file always appear without needing a manual import
+    if (Object.keys(state.photos).length === 0) {
+      try {
+        const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
+        const parsed = await res.json();
+        const topLevel = parsed.photos || {};
+        const merged = Object.assign({}, topLevel);
+        (parsed.nonStandard || []).forEach(t => {
+          if (t.photos && t.photos.length) {
+            merged[t.code] = (merged[t.code] || []).concat(
+              t.photos.filter(p => !(merged[t.code] || []).includes(p))
+            );
+          }
+        });
+        if (Object.keys(merged).length > 0) {
+          state.photos = merged;
+          save(LS.photos, state.photos);
+        }
+      } catch (e) {
+        // Silent fail — photos just won't show until manually imported
       }
     }
 
