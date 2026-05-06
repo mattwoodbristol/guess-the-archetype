@@ -103,16 +103,25 @@
      ========================================================== */
   async function loadTypes() {
     const local = loadJSON(LS.adminData, null);
-    if (local && local.nonStandard) return local;
+    if (local && local.nonStandard) return normalisePhotos(local);
     const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
     if (!res.ok) throw new Error('Could not load types.json (' + res.status + ')');
-    return res.json();
+    return normalisePhotos(await res.json());
   }
 
-  function getPhotosFor(code, typeObj) {
-    // Prefer localStorage (admin session edits), fall back to photos baked into types.json
+  // Merge top-level photos key into each type object so getPhotosFor always finds them
+  function normalisePhotos(data) {
+    const topLevel = data.photos || {};
+    data.nonStandard = (data.nonStandard || []).map(t => ({
+      ...t,
+      photos: t.photos && t.photos.length ? t.photos : (topLevel[t.code] || [])
+    }));
+    return data;
+  }
+
+  function getPhotosFor(code) {
     const store = loadJSON(LS.adminPhotos, {});
-    return store[code] || (typeObj && typeObj.photos) || [];
+    return store[code] || [];
   }
 
   /* ==========================================================
@@ -123,7 +132,7 @@
     const root = tpl.firstElementChild;
 
     // Photo (if admin uploaded any)
-    const photos = getPhotosFor(pick.code, pick);
+    const photos = getPhotosFor(pick.code);
     const photoHolder = $('.photo', root);
     if (photos.length > 0) {
       const idx = Math.floor(Math.random() * photos.length);
@@ -208,7 +217,7 @@
     $('.placeholder-label', root).textContent = pick.name;
 
     // Admin-uploaded photos?
-    const photos = getPhotosFor(pick.code, pick);
+    const photos = getPhotosFor(pick.code);
     if (photos.length > 0) {
       const photoHolder = $('.photo', root);
       const tag = photoHolder.querySelector('.tag');
