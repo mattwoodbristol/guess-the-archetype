@@ -254,12 +254,13 @@ function ensureSheet(name, header) {
     sheet.setFrozenRows(1);
     return sheet;
   }
-  // Best-effort header upgrade: if the sheet has fewer columns than the new header,
-  // append the missing columns onto the header row so doPost can write to them.
+  // Header upgrade: any column from the desired header that doesn't appear in the
+  // current header gets appended at the end. Existing data is left untouched.
   const existingCols = sheet.getLastColumn();
-  if (existingCols < header.length) {
-    const existingHeader = sheet.getRange(1, 1, 1, existingCols).getValues()[0];
-    const missing = header.slice(existingCols);
+  const existingHeader = sheet.getRange(1, 1, 1, existingCols).getValues()[0]
+                              .map(function (v) { return String(v).trim(); });
+  const missing = header.filter(function (h) { return existingHeader.indexOf(h) === -1; });
+  if (missing.length > 0) {
     sheet.getRange(1, existingCols + 1, 1, missing.length).setValues([missing]);
   }
   return sheet;

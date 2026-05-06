@@ -13,11 +13,13 @@
   <div class="app-shell">
 
     <header class="site-header">
-      <div class="mark" aria-hidden="true"></div>
-      <div>
-        <div class="sub">Transform-ER</div>
-        <h1>Guess the Archetype</h1>
-      </div>
+      <a class="brand-link" href="index.html" aria-label="Home">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <div class="sub">Transform-ER</div>
+          <h1>Guess the Archetype</h1>
+        </div>
+      </a>
     </header>
 
     <!-- ================= Intro screen ================= -->
@@ -123,7 +125,10 @@
       </div>
 
       <div class="leaderboard">
-        <h3>Leaderboard · top players</h3>
+        <div class="head" style="display:flex;justify-content:space-between;align-items:center;padding:0 24px;">
+          <h3 style="padding:20px 0 12px;">Leaderboard · top players</h3>
+          <a href="leaderboard.html" style="font-size:12px;color:var(--muted);letter-spacing:0.04em;">View full board →</a>
+        </div>
         <div id="leaderboard-mount">
           <div class="empty">Loading leaderboard…</div>
         </div>

@@ -1228,3 +1228,19 @@ label.photo-upload-label {
 }
 label.photo-upload-label:hover { background: var(--panel-strong); border-color: var(--light-blue); }
 input#e-photo-file { display: none; }
+
+/* ---- brand link wrapper around the top-left logo ---- */
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-decoration: none;
+  color: inherit;
+}
+.brand-link:hover { text-decoration: none; }
+.brand-link:hover .mark {
+  border-color: var(--light-blue);
+  background: radial-gradient(circle at 50% 50%, rgba(115,215,255,0.18), transparent 60%);
+}
+.brand-link h1 { transition: color 0.12s; }
+.brand-link:hover h1 { color: var(--light-blue); }
