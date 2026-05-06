@@ -243,6 +243,8 @@
     const metaEl = $('.meta', revealEl);
     const revealTitle = $('.reveal-title', revealEl);
     const portfolioPrompt = $('.portfolio-prompt', root);
+    const disagreePrompt = $('.disagree-prompt', root);
+    const disagreeInput = disagreePrompt && disagreePrompt.querySelector('.disagree-input');
     const actions = $('.actions', root);
     const skipBtn = $('.skip', actions);
     if (skipBtn) skipBtn.style.display = 'none'; // MCQ uses Next, not Skip
@@ -286,8 +288,9 @@
         if (revealTitle) revealTitle.textContent = correctAnswer ? 'Correct' : 'Revealed';
         revealEl.classList.add('show');
 
-        // Surface portfolio prompt
+        // Surface portfolio + disagree prompts
         portfolioPrompt.classList.add('show');
+        if (disagreePrompt) disagreePrompt.classList.add('show');
         // Show Next button
         actions.style.display = 'flex';
       });
@@ -330,23 +333,29 @@
 
     return {
       node: root,
-      getResult: () => ({
-        kind: 'mcq',
-        correct: !!correctAnswer,
-        chosen: chosenCode,
-        portfolio: (ppState.has && ppState.has !== 'no') || ppState.count || ppState.locations
-          ? {
-              kind: 'nonStd',
-              code: pick.code,
-              name: pick.name,
-              has: ppState.has,
-              count: ppState.count,
-              locations: ppState.locations
-            }
-          : (ppState.has === 'no'
-              ? { kind: 'nonStd', code: pick.code, name: pick.name, has: 'no' }
-              : null)
-      })
+      getResult: () => {
+        const suggested = disagreeInput ? disagreeInput.value.trim() : '';
+        return {
+          kind: 'mcq',
+          correct: !!correctAnswer,
+          chosen: chosenCode,
+          portfolio: (ppState.has && ppState.has !== 'no') || ppState.count || ppState.locations
+            ? {
+                kind: 'nonStd',
+                code: pick.code,
+                name: pick.name,
+                has: ppState.has,
+                count: ppState.count,
+                locations: ppState.locations
+              }
+            : (ppState.has === 'no'
+                ? { kind: 'nonStd', code: pick.code, name: pick.name, has: 'no' }
+                : null),
+          disagreement: suggested
+            ? { code: pick.code, officialName: pick.name, suggestedName: suggested }
+            : null
+        };
+      }
     };
   }
 
@@ -451,6 +460,7 @@
     score: 0,
     answers: [],
     portfolioAnswers: [],
+    disagreements: [],
     startedAt: null
   };
 
@@ -587,6 +597,7 @@
     game.score = 0;
     game.answers = [];
     game.portfolioAnswers = [];
+    game.disagreements = [];
     game.startedAt = Date.now();
 
     $('#counter-total').textContent = total;
@@ -629,6 +640,7 @@
       game.answers.push({ code: card.pick.code, name: card.pick.name, correct: !!result.correct, chosen: result.chosen });
       $('#score-now').textContent = String(game.score);
       if (result.portfolio) game.portfolioAnswers.push(result.portfolio);
+      if (result.disagreement) game.disagreements.push(result.disagreement);
     } else {
       if (result.portfolio) game.portfolioAnswers.push(result.portfolio);
     }
@@ -676,7 +688,8 @@
         durationMs: Date.now() - game.startedAt,
         answers: game.answers
       },
-      portfolio: game.portfolioAnswers
+      portfolio: game.portfolioAnswers,
+      disagreements: game.disagreements
     };
     if (!CFG.APPS_SCRIPT_URL) {
       console.warn('APPS_SCRIPT_URL not set; submission skipped. Payload:', payload);

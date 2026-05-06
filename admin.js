@@ -17,7 +17,29 @@
   function $(s, r) { return (r || document).querySelector(s); }
   function $all(s, r) { return Array.from((r || document).querySelectorAll(s)); }
   function load(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-  function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('Storage full — export JSON then clear older photos.'); } }
+  // Best-effort localStorage write. Quota errors are normal when photos are big;
+  // we just log them. Admin's in-memory state still works and they can export.
+  function save(k, v) {
+    try { localStorage.setItem(k, JSON.stringify(v)); return true; }
+    catch (e) {
+      try { localStorage.removeItem(k); } catch (e2) {}
+      console.warn('localStorage write failed for ' + k + ' (likely quota). In-memory state is still good.', e);
+      return false;
+    }
+  }
+  // Strip photo blobs out of a types-shaped object so it can be persisted to localStorage.
+  function stripPhotosFromTypeData(d) {
+    if (!d) return d;
+    delete d.photos;
+    delete d.photoCaptions;
+    ['nonStandard', 'traditional'].forEach(k => {
+      d[k] = (d[k] || []).map(t => {
+        const { photos, photoCaptions, ...rest } = t;
+        return rest;
+      });
+    });
+    return d;
+  }
   function toast(msg) {
     const t = $('#toast');
     if (!t) return;
@@ -100,14 +122,16 @@
     state.captions = load(LS.captions, {});
     const existing = load(LS.data, null);
     if (existing && existing.nonStandard) {
-      state.data = existing;
+      // Strip any photo blobs that previous admin builds may have stored here.
+      state.data = stripPhotosFromTypeData(existing);
     } else {
       try {
         const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
         const parsed = await res.json();
         parsed.traditional = parsed.traditional || [];
         parsed.version = parsed.version || CFG.DATA_VERSION;
-        state.data = parsed;
+        // Pull photos/captions out of state.data — they'll be hydrated into state.photos / state.captions below.
+        state.data = stripPhotosFromTypeData(parsed);
       } catch (e) {
         state.data = { nonStandard: [], traditional: [], version: CFG.DATA_VERSION };
         toast('Could not load types.json — starting blank.');
@@ -125,7 +149,10 @@
       }
     } catch (e) { /* fall through to local defaults */ }
 
-    // Auto-load photos + captions from types.json if localStorage has none yet
+    // Auto-load photos + captions from types.json into memory if localStorage was empty.
+    // We do NOT persist the bulk photos to localStorage here — they're already in types.json
+    // and most browsers cap localStorage at 5–10 MB which Beck's photos can exceed.
+    // Persistence only kicks in when admin actually edits a photo (see onPhotoUpload).
     if (Object.keys(state.photos).length === 0) {
       try {
         const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
@@ -146,14 +173,10 @@
             }
           });
         });
-        if (Object.keys(mergedPhotos).length > 0) {
-          state.photos = mergedPhotos;
-          save(LS.photos, state.photos);
-        }
-        if (Object.keys(mergedCaps).length > 0) {
-          state.captions = mergedCaps;
-          save(LS.captions, state.captions);
-        }
+        if (Object.keys(mergedPhotos).length > 0) state.photos = mergedPhotos;
+        if (Object.keys(mergedCaps).length > 0) state.captions = mergedCaps;
+        // Captions are tiny — try to persist them (best-effort).
+        save(LS.captions, state.captions);
       } catch (e) { /* silent */ }
     }
 
@@ -458,6 +481,9 @@
 
   function persistData() {
     state.data.version = state.data.version || CFG.DATA_VERSION;
+    // Defensive: strip any photo blobs that may have leaked into state.data so the
+    // localStorage write stays small and never blows quota.
+    stripPhotosFromTypeData(state.data);
     save(LS.data, state.data);
   }
 

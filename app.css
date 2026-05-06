@@ -1244,3 +1244,36 @@ input#e-photo-file { display: none; }
 }
 .brand-link h1 { transition: color 0.12s; }
 .brand-link:hover h1 { color: var(--light-blue); }
+
+/* ---- post-MCQ "Disagree?" prompt ---- */
+.disagree-prompt {
+  margin-top: 14px;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  background: rgba(247,228,202,0.07);
+  border: 1px solid rgba(247,228,202,0.25);
+  display: none;
+  animation: fadeIn 0.2s ease both;
+}
+.disagree-prompt.show { display: block; }
+.disagree-prompt .dp-q {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wheat);
+  margin: 0 0 10px;
+  letter-spacing: 0.02em;
+}
+.disagree-prompt input.disagree-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.2);
+  color: var(--white);
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  outline: none;
+}
+.disagree-prompt input.disagree-input:focus {
+  border-color: var(--wheat);
+  background: rgba(0,0,0,0.35);
+}

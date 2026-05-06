@@ -14,10 +14,11 @@
  * Or simply: rename the existing sheets out of the way (e.g. add suffix '_v1') and let v2 create fresh ones.
  */
 
-const SHEET_SUBMISSIONS = 'Submissions';
-const SHEET_PORTFOLIO   = 'Portfolio';
-const SHEET_LEADERBOARD = 'Leaderboard';
-const SHEET_SETTINGS    = 'Settings';
+const SHEET_SUBMISSIONS   = 'Submissions';
+const SHEET_PORTFOLIO     = 'Portfolio';
+const SHEET_LEADERBOARD   = 'Leaderboard';
+const SHEET_SETTINGS      = 'Settings';
+const SHEET_DISAGREEMENTS = 'Disagreements';
 
 // Must match config.js ADMIN_PASSWORD. Used to gate /saveSettings.
 // Public-by-design (config.js is also public), but stops random spam.
@@ -35,6 +36,10 @@ const HEADER_PORTFOLIO = [
 const HEADER_LEADERBOARD = [
   'playedAt', 'name', 'org', 'difficulty', 'score', 'total'
 ];
+const HEADER_DISAGREEMENTS = [
+  'playedAt', 'name', 'org', 'orgLocation', 'contactEmail',
+  'archetypeCode', 'officialName', 'suggestedName'
+];
 
 /** Entry point for POST. */
 function doPost(e) {
@@ -44,6 +49,7 @@ function doPost(e) {
       writeSubmission(payload);
       writePortfolio(payload);
       writeLeaderboard(payload);
+      writeDisagreements(payload);
       return jsonOut({ ok: true });
     }
     if (payload.action === 'saveSettings') {
@@ -118,6 +124,25 @@ function writePortfolio(payload) {
       bespokeName:        row.bespokeName || '',
       propertyLocations:  row.locations || '',
       skipped:            row.skipped ? 'true' : ''
+    });
+  });
+}
+
+function writeDisagreements(payload) {
+  if (!payload.disagreements || !payload.disagreements.length) return;
+  const sheet = ensureSheet(SHEET_DISAGREEMENTS, HEADER_DISAGREEMENTS);
+  const p = payload.player || {};
+  const when = payload.submittedAt || new Date().toISOString();
+  payload.disagreements.forEach(function (row) {
+    appendKeyedRow(sheet, {
+      playedAt:       when,
+      name:           p.name || '',
+      org:            p.org || '',
+      orgLocation:    p.orgLocation || '',
+      contactEmail:   p.email || '',
+      archetypeCode:  row.code || '',
+      officialName:   row.officialName || '',
+      suggestedName:  row.suggestedName || ''
     });
   });
 }
@@ -288,6 +313,9 @@ function test_writeFakeRow() {
           { kind: 'trad', code: 'TRAD-VT-TER', name: 'Victorian terrace', has: 'yes', count: '1-50', bespokeName: 'VT-A', locations: 'Salford' },
           { kind: 'nonStd', code: 'P003', name: 'Airey', has: 'yes', count: '1-50', locations: 'Manchester' },
           { kind: 'trad', code: 'TRAD-IW-SEMI', name: 'Inter-war semi', skipped: true }
+        ],
+        disagreements: [
+          { code: 'S062', officialName: 'Wimpey No-Fines', suggestedName: 'we always called these "Butterfly" round here' }
         ]
       })
     }
