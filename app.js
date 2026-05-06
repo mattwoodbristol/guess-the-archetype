@@ -103,20 +103,44 @@
   }
 
   /* ==========================================================
-     Settings — admin overrides from data.settings, then config.js
+     Settings — live (Apps Script) overrides types.json overrides config.js
+     Each difficulty profile carries its own totalCards / traditionalCount.
      ========================================================== */
-  function effectiveSettings(data) {
-    const s = (data && data.settings) || {};
-    const totalCards = Number(s.totalCards) || CFG.CARDS_PER_GAME || 20;
-    const traditionalCount = Number.isFinite(Number(s.traditionalCount))
-      ? Math.min(Number(s.traditionalCount), totalCards)
-      : (CFG.TRADITIONAL_PER_GAME || 4);
-    const diff = Object.assign({}, CFG.DIFFICULTY || {});
-    if (s.difficulty) {
-      diff.easy = Object.assign({}, diff.easy, s.difficulty.easy || {});
-      diff.hard = Object.assign({}, diff.hard, s.difficulty.hard || {});
-    }
-    return { totalCards, traditionalCount, difficulty: diff };
+  function mergeProfile(level, ...sources) {
+    const base = Object.assign({}, (CFG.DIFFICULTY && CFG.DIFFICULTY[level]) || {});
+    sources.forEach(s => { if (s) Object.assign(base, s); });
+    // Sanitise
+    base.totalCards = Math.max(1, Number(base.totalCards) || 20);
+    base.traditionalCount = Math.max(0, Math.min(base.totalCards, Number(base.traditionalCount) || 0));
+    base.mcqOptions = Math.max(2, Number(base.mcqOptions) || 4);
+    base.distractorScope = base.distractorScope || 'sameClass';
+    base.showHint = !!base.showHint;
+    return base;
+  }
+
+  function effectiveSettings(data, remote) {
+    const localS = (data && data.settings && data.settings.difficulty) || {};
+    const remoteS = (remote && remote.difficulty) || {};
+    return {
+      difficulty: {
+        easy: mergeProfile('easy', localS.easy, remoteS.easy),
+        hard: mergeProfile('hard', localS.hard, remoteS.hard)
+      }
+    };
+  }
+
+  async function loadRemoteSettings() {
+    if (!CFG.APPS_SCRIPT_URL) return null;
+    try {
+      const url = CFG.APPS_SCRIPT_URL + '?action=settings&t=' + Date.now();
+      const res = await fetch(url, { method: 'GET' });
+      const j = await res.json();
+      if (j && j.difficulty) {
+        saveJSON('ter_remote_settings_v1', j);
+        return j;
+      }
+    } catch (e) { /* fall through */ }
+    return loadJSON('ter_remote_settings_v1', null);
   }
 
   /* ==========================================================
@@ -438,7 +462,8 @@
       console.error(e);
       return;
     }
-    game.settings = effectiveSettings(game.types);
+    const remote = await loadRemoteSettings();
+    game.settings = effectiveSettings(game.types, remote);
 
     // Wire up intro form
     $('#intro-form').addEventListener('submit', onIntroSubmit);
@@ -457,6 +482,19 @@
       target.classList.add('active');
       game.difficulty = lastDiff;
     }
+
+    // Update the description text under each difficulty button with live numbers.
+    $all('[data-diff-desc]').forEach(node => {
+      const level = node.dataset.diffDesc;
+      const p = game.settings.difficulty[level];
+      if (!p) return;
+      const bits = [
+        p.totalCards + ' cards',
+        p.mcqOptions + ' options',
+        p.showHint ? 'class hint shown' : 'no class hint'
+      ];
+      node.textContent = bits.join(' · ');
+    });
 
     // Prefill returning player
     const last = loadJSON(LS.lastPlayer, null);
@@ -513,8 +551,9 @@
   }
 
   function buildDeck() {
-    const total = game.settings.totalCards;
-    const tradTarget = game.settings.traditionalCount;
+    const profile = game.settings.difficulty[game.difficulty] || game.settings.difficulty.easy;
+    const total = profile.totalCards;
+    const tradTarget = profile.traditionalCount;
     const nsTarget = total - tradTarget;
 
     const tradPool = (game.types.traditional || []).filter(Boolean);
@@ -714,7 +753,10 @@
       const diff = (r.difficulty || '').toLowerCase();
       const pillClass = diff === 'hard' ? 'diff-pill hard' : 'diff-pill easy';
       const pillText = diff ? diff.toUpperCase() : '—';
-      const scoreText = (r.score || 0) + ' / ' + (r.total || (game.settings ? (game.settings.totalCards - game.settings.traditionalCount) : '—'));
+      const profile = (game.settings && game.settings.difficulty && r.difficulty)
+        ? game.settings.difficulty[String(r.difficulty).toLowerCase()] : null;
+      const fallbackTotal = profile ? (profile.totalCards - profile.traditionalCount) : '—';
+      const scoreText = (r.score || 0) + ' / ' + (r.total || fallbackTotal);
       const tr = el('tr', { class: isMe ? 'you' : '' }, [
         el('td', { class: 'rank' }, String(i + 1)),
         el('td', {}, r.name || '—'),

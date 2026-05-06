@@ -10,19 +10,29 @@ window.APP_CONFIG = {
   ADMIN_PASSWORD: "transform-er-admin-2026",
 
   // ===== fallback defaults =====
-  // Admin can override these per-game via the Settings panel; values saved into
-  // types.json under `settings:` win over anything here at runtime.
+  // Admin can override these via /admin.html → Game settings (saved to the Sheet
+  // via Apps Script). Settings precedence at runtime:
+  //   1. Live settings fetched from Apps Script (?action=settings)
+  //   2. data.settings inside types.json
+  //   3. These DIFFICULTY defaults
 
-  // How many cards per game (must be >= TRADITIONAL_PER_GAME).
-  CARDS_PER_GAME: 20,
-
-  // How many of those cards must be traditional-construction (portfolio-data) cards.
-  TRADITIONAL_PER_GAME: 4,
-
-  // Easy/hard mode defaults — overridden by data.settings.difficulty when present.
+  // Per-difficulty defaults. Each profile carries its own card counts so Hard
+  // can be longer than Easy.
   DIFFICULTY: {
-    easy: { mcqOptions: 3, distractorScope: 'sameClass', showHint: true  },
-    hard: { mcqOptions: 5, distractorScope: 'mixed',     showHint: false }
+    easy: {
+      totalCards:        15,
+      traditionalCount:   3,
+      mcqOptions:         3,
+      distractorScope: 'sameClass',
+      showHint:        true
+    },
+    hard: {
+      totalCards:        25,
+      traditionalCount:   4,
+      mcqOptions:         5,
+      distractorScope: 'mixed',
+      showHint:        false
+    }
   },
 
   // How many rows of leaderboard to show on the intro + end screen.

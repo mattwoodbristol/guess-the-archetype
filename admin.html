@@ -111,19 +111,18 @@
         These values are saved into <code>types.json</code> on export. Players see them at runtime; redeploy the file to roll out changes.
       </p>
       <div class="admin-settings">
-        <div>
-          <label>Total flashcards per game</label>
-          <input id="s-total" type="number" min="1" max="60" />
-        </div>
-        <div>
-          <label>Number of traditional cards</label>
-          <input id="s-trad" type="number" min="0" max="60" />
-        </div>
-
         <div class="full">
           <div class="group">
             <h4>Easy mode</h4>
             <div class="grid">
+              <div>
+                <label>Total flashcards</label>
+                <input id="s-easy-total" type="number" min="1" max="60" />
+              </div>
+              <div>
+                <label>Traditional cards</label>
+                <input id="s-easy-trad" type="number" min="0" max="60" />
+              </div>
               <div>
                 <label>MCQ options</label>
                 <input id="s-easy-mcq" type="number" min="2" max="8" />
@@ -147,6 +146,14 @@
             <h4>Hard mode</h4>
             <div class="grid">
               <div>
+                <label>Total flashcards</label>
+                <input id="s-hard-total" type="number" min="1" max="60" />
+              </div>
+              <div>
+                <label>Traditional cards</label>
+                <input id="s-hard-trad" type="number" min="0" max="60" />
+              </div>
+              <div>
                 <label>MCQ options</label>
                 <input id="s-hard-mcq" type="number" min="2" max="8" />
               </div>
@@ -165,6 +172,7 @@
         </div>
       </div>
       <div class="admin-bar">
+        <span id="settings-status" class="counter" style="color:var(--muted);"></span>
         <button class="btn blue" id="btn-save-settings">Save settings</button>
       </div>
     </section>

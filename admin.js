@@ -54,12 +54,12 @@
   };
 
   function defaultSettings() {
+    const easyDefaults = { totalCards: 15, traditionalCount: 3, mcqOptions: 3, distractorScope: 'sameClass', showHint: true };
+    const hardDefaults = { totalCards: 25, traditionalCount: 4, mcqOptions: 5, distractorScope: 'mixed',     showHint: false };
     return {
-      totalCards: CFG.CARDS_PER_GAME || 20,
-      traditionalCount: CFG.TRADITIONAL_PER_GAME || 4,
       difficulty: {
-        easy: Object.assign({ mcqOptions: 3, distractorScope: 'sameClass', showHint: true  }, (CFG.DIFFICULTY && CFG.DIFFICULTY.easy) || {}),
-        hard: Object.assign({ mcqOptions: 5, distractorScope: 'mixed',     showHint: false }, (CFG.DIFFICULTY && CFG.DIFFICULTY.hard) || {})
+        easy: Object.assign({}, easyDefaults, (CFG.DIFFICULTY && CFG.DIFFICULTY.easy) || {}),
+        hard: Object.assign({}, hardDefaults, (CFG.DIFFICULTY && CFG.DIFFICULTY.hard) || {})
       }
     };
   }
@@ -114,6 +114,16 @@
       }
     }
     state.data.settings = state.data.settings || defaultSettings();
+    // Pull live settings from Apps Script (overrides types.json), so the admin form reflects what's actually live.
+    try {
+      if (CFG.APPS_SCRIPT_URL) {
+        const res = await fetch(CFG.APPS_SCRIPT_URL + '?action=settings&t=' + Date.now());
+        const remote = await res.json();
+        if (remote && remote.difficulty) {
+          state.data.settings.difficulty = remote.difficulty;
+        }
+      }
+    } catch (e) { /* fall through to local defaults */ }
 
     // Auto-load photos + captions from types.json if localStorage has none yet
     if (Object.keys(state.photos).length === 0) {
@@ -174,39 +184,68 @@
      ========================================================== */
   function fillSettingsForm() {
     const s = state.data.settings || defaultSettings();
-    $('#s-total').value = s.totalCards;
-    $('#s-trad').value = s.traditionalCount;
     const e = (s.difficulty && s.difficulty.easy) || {};
     const h = (s.difficulty && s.difficulty.hard) || {};
-    $('#s-easy-mcq').value = e.mcqOptions || 3;
+    $('#s-easy-total').value = e.totalCards || 15;
+    $('#s-easy-trad').value  = e.traditionalCount != null ? e.traditionalCount : 3;
+    $('#s-easy-mcq').value   = e.mcqOptions || 3;
     $('#s-easy-scope').value = e.distractorScope || 'sameClass';
     $('#s-easy-hint').checked = !!e.showHint;
-    $('#s-hard-mcq').value = h.mcqOptions || 5;
+    $('#s-hard-total').value = h.totalCards || 25;
+    $('#s-hard-trad').value  = h.traditionalCount != null ? h.traditionalCount : 4;
+    $('#s-hard-mcq').value   = h.mcqOptions || 5;
     $('#s-hard-scope').value = h.distractorScope || 'mixed';
     $('#s-hard-hint').checked = !!h.showHint;
   }
 
-  function saveSettings() {
-    const total = Math.max(1, parseInt($('#s-total').value, 10) || 20);
-    const trad = Math.max(0, Math.min(total, parseInt($('#s-trad').value, 10) || 0));
-    state.data.settings = {
+  function readDiffProfileFromForm(prefix, defaults) {
+    const total = Math.max(1, parseInt($('#s-' + prefix + '-total').value, 10) || defaults.totalCards);
+    const trad = Math.max(0, Math.min(total, parseInt($('#s-' + prefix + '-trad').value, 10) || 0));
+    return {
       totalCards: total,
       traditionalCount: trad,
+      mcqOptions: Math.max(2, parseInt($('#s-' + prefix + '-mcq').value, 10) || defaults.mcqOptions),
+      distractorScope: $('#s-' + prefix + '-scope').value,
+      showHint: $('#s-' + prefix + '-hint').checked
+    };
+  }
+
+  async function saveSettings() {
+    const settings = {
       difficulty: {
-        easy: {
-          mcqOptions: Math.max(2, parseInt($('#s-easy-mcq').value, 10) || 3),
-          distractorScope: $('#s-easy-scope').value,
-          showHint: $('#s-easy-hint').checked
-        },
-        hard: {
-          mcqOptions: Math.max(2, parseInt($('#s-hard-mcq').value, 10) || 5),
-          distractorScope: $('#s-hard-scope').value,
-          showHint: $('#s-hard-hint').checked
-        }
+        easy: readDiffProfileFromForm('easy', { totalCards: 15, mcqOptions: 3 }),
+        hard: readDiffProfileFromForm('hard', { totalCards: 25, mcqOptions: 5 })
       }
     };
+    state.data.settings = settings;
     persistData();
-    toast('Settings saved.');
+    setSettingsStatus('Saving…');
+
+    if (!CFG.APPS_SCRIPT_URL) {
+      setSettingsStatus('Saved locally (no backend URL configured).');
+      return;
+    }
+
+    try {
+      const res = await fetch(CFG.APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'saveSettings', password: CFG.ADMIN_PASSWORD, settings })
+      });
+      // Apps Script POST follows a 302 -> response body — we can't read it cross-origin.
+      // Treat a non-network-error as success.
+      setSettingsStatus('Saved · live across all players');
+      toast('Settings saved to server.');
+    } catch (e) {
+      setSettingsStatus('Saved locally — server unreachable.');
+      toast('Couldn\'t reach server. Settings saved locally only.');
+    }
+  }
+
+  function setSettingsStatus(msg) {
+    const el = $('#settings-status');
+    if (el) el.textContent = msg;
   }
 
   /* ==========================================================

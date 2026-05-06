@@ -17,6 +17,11 @@
 const SHEET_SUBMISSIONS = 'Submissions';
 const SHEET_PORTFOLIO   = 'Portfolio';
 const SHEET_LEADERBOARD = 'Leaderboard';
+const SHEET_SETTINGS    = 'Settings';
+
+// Must match config.js ADMIN_PASSWORD. Used to gate /saveSettings.
+// Public-by-design (config.js is also public), but stops random spam.
+const ADMIN_PASSWORD = 'transform-er-admin-2026';
 
 const HEADER_SUBMISSIONS = [
   'playedAt', 'name', 'org', 'role', 'orgLocation', 'email', 'phone',
@@ -31,26 +36,38 @@ const HEADER_LEADERBOARD = [
   'playedAt', 'name', 'org', 'difficulty', 'score', 'total'
 ];
 
-/** Entry point for POST — record a play. */
+/** Entry point for POST. */
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
-    if (payload.action !== 'submit') return jsonOut({ ok: false, error: 'unknown action' });
-    writeSubmission(payload);
-    writePortfolio(payload);
-    writeLeaderboard(payload);
-    return jsonOut({ ok: true });
+    if (payload.action === 'submit') {
+      writeSubmission(payload);
+      writePortfolio(payload);
+      writeLeaderboard(payload);
+      return jsonOut({ ok: true });
+    }
+    if (payload.action === 'saveSettings') {
+      if (payload.password !== ADMIN_PASSWORD) {
+        return jsonOut({ ok: false, error: 'auth failed' });
+      }
+      saveSettingsToSheet(payload.settings || {});
+      return jsonOut({ ok: true });
+    }
+    return jsonOut({ ok: false, error: 'unknown action' });
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
   }
 }
 
-/** Entry point for GET — public leaderboard. */
+/** Entry point for GET — public leaderboard or settings. */
 function doGet(e) {
   const action = (e.parameter && e.parameter.action) || 'leaderboard';
   if (action === 'leaderboard') {
     const n = parseInt((e.parameter && e.parameter.n) || '10', 10);
     return jsonOut(getLeaderboard(isNaN(n) ? 10 : Math.min(n, 200)));
+  }
+  if (action === 'settings') {
+    return jsonOut(readSettingsFromSheet());
   }
   return jsonOut({ ok: false, error: 'unknown action' });
 }
@@ -126,6 +143,52 @@ function appendKeyedRow(sheet, fields) {
     return Object.prototype.hasOwnProperty.call(fields, col) ? fields[col] : '';
   });
   sheet.appendRow(row);
+}
+
+/* ---------------- settings storage ----------------
+   Settings tab: two rows
+     A1=key            B1=value
+     A2=settings       B2=<JSON string of the settings object>
+     A3=updatedAt      B3=ISO timestamp
+*/
+
+function ensureSettingsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_SETTINGS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_SETTINGS);
+    sheet.getRange(1, 1, 1, 2).setValues([['key', 'value']]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 2, 1, 1).setNote('Stores the live game configuration (JSON). Edited by admin.html — do not edit by hand unless you know what you\'re doing.');
+  }
+  return sheet;
+}
+
+function saveSettingsToSheet(settings) {
+  const sheet = ensureSettingsSheet();
+  const json = JSON.stringify(settings);
+  // Wipe existing rows (except header) and rewrite to keep things clean.
+  const last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).clearContent();
+  sheet.getRange(2, 1, 2, 2).setValues([
+    ['settings',  json],
+    ['updatedAt', new Date().toISOString()]
+  ]);
+}
+
+function readSettingsFromSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_SETTINGS);
+  if (!sheet) return null;
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const rows = sheet.getRange(2, 1, last - 1, 2).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][0] === 'settings' && rows[i][1]) {
+      try { return JSON.parse(rows[i][1]); } catch (e) { return null; }
+    }
+  }
+  return null;
 }
 
 /* ---------------- readers ---------------- */
