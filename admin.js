@@ -116,25 +116,6 @@
     $('#import-file').addEventListener('change', onImport);
     $('#btn-reset').addEventListener('click', resetToShipped);
     $('#e-photo-file').addEventListener('change', onPhotoUpload);
-
-    // Drag-and-drop onto the whole editor panel
-    const editorPanel = $('#editor');
-    editorPanel.addEventListener('dragover', e => {
-      if (e.dataTransfer.types.includes('Files')) {
-        e.preventDefault();
-        editorPanel.classList.add('drag-active');
-      }
-    });
-    editorPanel.addEventListener('dragleave', e => {
-      if (!editorPanel.contains(e.relatedTarget)) editorPanel.classList.remove('drag-active');
-    });
-    editorPanel.addEventListener('drop', e => {
-      editorPanel.classList.remove('drag-active');
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        e.preventDefault();
-        handleFileList(Array.from(e.dataTransfer.files));
-      }
-    });
   }
 
   /* ==========================================================
@@ -234,117 +215,13 @@
     const code = state.selectedCode;
     if (!code) return;
     const photos = state.photos[code] || [];
-
-    if (photos.length === 0) {
-      mount.appendChild(el('div', { class: 'ph-empty' }, 'No photos yet — drag images here or use the upload button above.'));
-      return;
-    }
-
     photos.forEach((src, i) => {
-      const isFirst = i === 0;
-      const ph = el('div', { class: 'ph', draggable: 'true', 'data-idx': String(i) });
-
-      const img = el('img', { src: src, alt: 'photo ' + (i + 1) });
-      const overlay = el('div', { class: 'ph-overlay' });
-
-      if (isFirst) {
-        overlay.appendChild(el('span', { class: 'ph-badge' }, 'Primary'));
-      }
-
-      const actions = el('div', { class: 'ph-actions' });
-
-      if (i > 0) {
-        const promoteBtn = el('button', { type: 'button', title: 'Move to first (primary)', class: 'ph-btn ph-promote' }, '↑ Primary');
-        promoteBtn.addEventListener('click', (e) => { e.stopPropagation(); movePhotoToFirst(code, i); });
-        actions.appendChild(promoteBtn);
-      }
-
-      const delBtn = el('button', { type: 'button', title: 'Remove photo', class: 'ph-btn ph-delete' }, '× Remove');
-      delBtn.addEventListener('click', (e) => { e.stopPropagation(); removePhoto(code, i); });
-      actions.appendChild(delBtn);
-
-      overlay.appendChild(actions);
-      ph.appendChild(img);
-      ph.appendChild(overlay);
-
-      // Drag-to-reorder
-      ph.addEventListener('dragstart', onDragStart);
-      ph.addEventListener('dragover', onDragOver);
-      ph.addEventListener('drop', onDrop);
-      ph.addEventListener('dragend', onDragEnd);
-
+      const ph = el('div', { class: 'ph' }, [
+        el('img', { src: src, alt: 'photo ' + (i + 1) }),
+        el('button', { type: 'button', title: 'Delete photo', onclick: () => removePhoto(code, i) }, '×')
+      ]);
       mount.appendChild(ph);
     });
-
-    // Drop zone at the end for adding new images via drag
-    const dropZone = el('div', { class: 'ph-dropzone', id: 'ph-dropzone' }, '+ Drop new photos here');
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
-      // Only handle file drops (not reorder drags)
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        handleFileList(Array.from(e.dataTransfer.files));
-      }
-    });
-    mount.appendChild(dropZone);
-  }
-
-  /* Drag-to-reorder state */
-  let dragSrcIdx = null;
-
-  function onDragStart(e) {
-    dragSrcIdx = parseInt(this.dataset.idx, 10);
-    this.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    // Set empty drag image so the overlay doesn't flicker
-    const ghost = document.createElement('div');
-    ghost.style.opacity = '0';
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, 0, 0);
-    setTimeout(() => document.body.removeChild(ghost), 0);
-  }
-
-  function onDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const targetIdx = parseInt(this.dataset.idx, 10);
-    if (dragSrcIdx === null || isNaN(targetIdx) || targetIdx === dragSrcIdx) return;
-    this.classList.add('drag-target');
-  }
-
-  function onDrop(e) {
-    e.preventDefault();
-    // Ignore file drops on photo tiles (handled by dropzone)
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) return;
-    const targetIdx = parseInt(this.dataset.idx, 10);
-    const code = state.selectedCode;
-    if (dragSrcIdx === null || isNaN(targetIdx) || targetIdx === dragSrcIdx || !code) return;
-    const photos = state.photos[code] || [];
-    const moved = photos.splice(dragSrcIdx, 1)[0];
-    photos.splice(targetIdx, 0, moved);
-    state.photos[code] = photos;
-    save(LS.photos, state.photos);
-    dragSrcIdx = null;
-    renderPhotos();
-    renderList();
-  }
-
-  function onDragEnd() {
-    dragSrcIdx = null;
-    $all('.ph', $('#e-photos')).forEach(p => p.classList.remove('dragging', 'drag-target'));
-  }
-
-  function movePhotoToFirst(code, idx) {
-    const photos = state.photos[code] || [];
-    const moved = photos.splice(idx, 1)[0];
-    photos.unshift(moved);
-    state.photos[code] = photos;
-    save(LS.photos, state.photos);
-    renderPhotos();
-    renderList();
-    toast('Set as primary photo.');
   }
 
   /* ==========================================================
@@ -439,18 +316,13 @@
      Photos
      ========================================================== */
   function onPhotoUpload(e) {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    handleFileList(files);
-  }
-
-  function handleFileList(files) {
     const code = state.selectedCode;
     if (!code) return;
-    const imageFiles = files.filter(f => f.type.startsWith('image/'));
-    if (!imageFiles.length) return;
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
 
-    Promise.all(imageFiles.map(fileToDataUri)).then(uris => {
+    Promise.all(files.map(fileToDataUri)).then(uris => {
       state.photos[code] = (state.photos[code] || []).concat(uris);
       save(LS.photos, state.photos);
       renderPhotos();
@@ -523,17 +395,46 @@
       try {
         const parsed = JSON.parse(reader.result);
         if (!parsed.nonStandard && !parsed.traditional) throw new Error('Missing nonStandard/traditional keys');
+
+        // Extract photos from three possible locations and merge them all:
+        //   1. Top-level photos key  { code: [dataUri, ...] }
+        //   2. Inline photos field on each type object
+        //   3. Existing localStorage photos (don't wipe photos for types not in this import)
+        const merged = Object.assign({}, state.photos);
+
+        if (parsed.photos) {
+          Object.assign(merged, parsed.photos);
+        }
+
+        (parsed.nonStandard || []).forEach(t => {
+          if (t.photos && t.photos.length) {
+            merged[t.code] = (merged[t.code] || []).concat(
+              t.photos.filter(p => !(merged[t.code] || []).includes(p))
+            );
+          }
+        });
+
+        state.photos = merged;
+
+        // Strip inline photos from the data objects so they aren't double-stored
+        const cleanNonStandard = (parsed.nonStandard || []).map(t => {
+          const { photos, ...rest } = t;
+          return rest;
+        });
+
         state.data = {
-          nonStandard: parsed.nonStandard || [],
+          nonStandard: cleanNonStandard,
           traditional: parsed.traditional || [],
           version: parsed.version || CFG.DATA_VERSION
         };
-        if (parsed.photos) state.photos = parsed.photos;
+
         persistData();
         save(LS.photos, state.photos);
         renderList();
         clearEditor();
-        toast('Imported.');
+
+        const photoCount = Object.values(state.photos).reduce((n, arr) => n + arr.length, 0);
+        toast('Imported — ' + photoCount + ' photo' + (photoCount !== 1 ? 's' : '') + ' loaded.');
       } catch (err) {
         toast('Import failed: ' + err.message);
       }
