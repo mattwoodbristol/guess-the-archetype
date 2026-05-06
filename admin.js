@@ -1,13 +1,18 @@
-/* Transform-ER admin — CRUD for archetypes, photo upload, JSON export/import.
+/* Transform-ER admin (v2) — types CRUD, photo upload + captions, game settings, JSON export.
    Storage model:
-     LS 'ter_admin_data_v1'   : { nonStandard: [...], traditional: [...], version: '...' }
-     LS 'ter_admin_photos_v1' : { [code]: ['data:image/...;base64,...', ...] }
+     LS 'ter_admin_data_v1'      : { nonStandard, traditional, settings, version }
+     LS 'ter_admin_photos_v1'    : { [code]: ['data:image/...;base64,...', ...] }
+     LS 'ter_admin_captions_v1'  : { [code]: ['caption 1', 'caption 2', ...] }   // NEW
    The game (app.js) prefers the localStorage copy over the shipped types.json when present.
 */
 (function () {
   'use strict';
   const CFG = window.APP_CONFIG;
-  const LS = { data: 'ter_admin_data_v1', photos: 'ter_admin_photos_v1' };
+  const LS = {
+    data:     'ter_admin_data_v1',
+    photos:   'ter_admin_photos_v1',
+    captions: 'ter_admin_captions_v1'
+  };
 
   function $(s, r) { return (r || document).querySelector(s); }
   function $all(s, r) { return Array.from((r || document).querySelectorAll(s)); }
@@ -15,6 +20,7 @@
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('Storage full — export JSON then clear older photos.'); } }
   function toast(msg) {
     const t = $('#toast');
+    if (!t) return;
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toast._t);
@@ -39,20 +45,29 @@
      State
      ========================================================== */
   const state = {
-    data: null,         // { nonStandard, traditional, version }
-    photos: null,       // { code: [dataUri] }
+    data: null,
+    photos: null,
+    captions: null,
     filter: 'all',
     search: '',
-    selectedCode: null,
-    dirtyPhotos: false
+    selectedCode: null
   };
 
+  function defaultSettings() {
+    return {
+      totalCards: CFG.CARDS_PER_GAME || 20,
+      traditionalCount: CFG.TRADITIONAL_PER_GAME || 4,
+      difficulty: {
+        easy: Object.assign({ mcqOptions: 3, distractorScope: 'sameClass', showHint: true  }, (CFG.DIFFICULTY && CFG.DIFFICULTY.easy) || {}),
+        hard: Object.assign({ mcqOptions: 5, distractorScope: 'mixed',     showHint: false }, (CFG.DIFFICULTY && CFG.DIFFICULTY.hard) || {})
+      }
+    };
+  }
+
   async function boot() {
-    // Login
     $('#pwd-go').addEventListener('click', onUnlock);
     $('#pwd').addEventListener('keydown', e => { if (e.key === 'Enter') onUnlock(); });
 
-    // Try auto-unlock if a session flag exists
     if (sessionStorage.getItem('ter_admin_ok') === '1') {
       reveal();
       await initData();
@@ -82,15 +97,14 @@
 
   async function initData() {
     state.photos = load(LS.photos, {});
+    state.captions = load(LS.captions, {});
     const existing = load(LS.data, null);
     if (existing && existing.nonStandard) {
       state.data = existing;
     } else {
-      // Load shipped version
       try {
         const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
         const parsed = await res.json();
-        // Ensure structure
         parsed.traditional = parsed.traditional || [];
         parsed.version = parsed.version || CFG.DATA_VERSION;
         state.data = parsed;
@@ -99,32 +113,41 @@
         toast('Could not load types.json — starting blank.');
       }
     }
+    state.data.settings = state.data.settings || defaultSettings();
 
-    // Auto-load photos from types.json if localStorage has none yet
-    // This means photos baked into the file always appear without needing a manual import
+    // Auto-load photos + captions from types.json if localStorage has none yet
     if (Object.keys(state.photos).length === 0) {
       try {
         const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
         const parsed = await res.json();
-        const topLevel = parsed.photos || {};
-        const merged = Object.assign({}, topLevel);
-        (parsed.nonStandard || []).forEach(t => {
-          if (t.photos && t.photos.length) {
-            merged[t.code] = (merged[t.code] || []).concat(
-              t.photos.filter(p => !(merged[t.code] || []).includes(p))
-            );
-          }
+        const topPhotos = parsed.photos || {};
+        const topCaps = parsed.photoCaptions || {};
+        const mergedPhotos = Object.assign({}, topPhotos);
+        const mergedCaps = Object.assign({}, topCaps);
+        ['nonStandard', 'traditional'].forEach(key => {
+          (parsed[key] || []).forEach(t => {
+            if (t.photos && t.photos.length) {
+              mergedPhotos[t.code] = (mergedPhotos[t.code] || []).concat(
+                t.photos.filter(p => !(mergedPhotos[t.code] || []).includes(p))
+              );
+            }
+            if (t.photoCaptions && t.photoCaptions.length) {
+              mergedCaps[t.code] = (mergedCaps[t.code] || []).concat(t.photoCaptions);
+            }
+          });
         });
-        if (Object.keys(merged).length > 0) {
-          state.photos = merged;
+        if (Object.keys(mergedPhotos).length > 0) {
+          state.photos = mergedPhotos;
           save(LS.photos, state.photos);
         }
-      } catch (e) {
-        // Silent fail — photos just won't show until manually imported
-      }
+        if (Object.keys(mergedCaps).length > 0) {
+          state.captions = mergedCaps;
+          save(LS.captions, state.captions);
+        }
+      } catch (e) { /* silent */ }
     }
 
-    // Wire up buttons
+    // Wire UI
     $all('#filter .chip').forEach(c => c.addEventListener('click', () => {
       $all('#filter .chip').forEach(x => x.classList.remove('active'));
       c.classList.add('active');
@@ -141,10 +164,53 @@
     $('#import-file').addEventListener('change', onImport);
     $('#btn-reset').addEventListener('click', resetToShipped);
     $('#e-photo-file').addEventListener('change', onPhotoUpload);
+    $('#btn-save-settings').addEventListener('click', saveSettings);
+
+    fillSettingsForm();
   }
 
   /* ==========================================================
-     Rendering
+     Settings panel
+     ========================================================== */
+  function fillSettingsForm() {
+    const s = state.data.settings || defaultSettings();
+    $('#s-total').value = s.totalCards;
+    $('#s-trad').value = s.traditionalCount;
+    const e = (s.difficulty && s.difficulty.easy) || {};
+    const h = (s.difficulty && s.difficulty.hard) || {};
+    $('#s-easy-mcq').value = e.mcqOptions || 3;
+    $('#s-easy-scope').value = e.distractorScope || 'sameClass';
+    $('#s-easy-hint').checked = !!e.showHint;
+    $('#s-hard-mcq').value = h.mcqOptions || 5;
+    $('#s-hard-scope').value = h.distractorScope || 'mixed';
+    $('#s-hard-hint').checked = !!h.showHint;
+  }
+
+  function saveSettings() {
+    const total = Math.max(1, parseInt($('#s-total').value, 10) || 20);
+    const trad = Math.max(0, Math.min(total, parseInt($('#s-trad').value, 10) || 0));
+    state.data.settings = {
+      totalCards: total,
+      traditionalCount: trad,
+      difficulty: {
+        easy: {
+          mcqOptions: Math.max(2, parseInt($('#s-easy-mcq').value, 10) || 3),
+          distractorScope: $('#s-easy-scope').value,
+          showHint: $('#s-easy-hint').checked
+        },
+        hard: {
+          mcqOptions: Math.max(2, parseInt($('#s-hard-mcq').value, 10) || 5),
+          distractorScope: $('#s-hard-scope').value,
+          showHint: $('#s-hard-hint').checked
+        }
+      }
+    };
+    persistData();
+    toast('Settings saved.');
+  }
+
+  /* ==========================================================
+     Type list + editor
      ========================================================== */
   function renderAll() { renderList(); clearEditor(); }
 
@@ -183,9 +249,7 @@
         el('div', {}, [
           el('div', { class: 'nm' }, r.name || '(unnamed)'),
           el('div', { class: 'cls' }, [
-            r.code || '—',
-            ' · ',
-            r.class_full || r.class || '—',
+            r.code || '—', ' · ', r.class_full || r.class || '—',
             photoCount ? ` · ${photoCount} photo${photoCount > 1 ? 's' : ''}` : ''
           ].join(''))
         ])
@@ -203,9 +267,9 @@
 
   function findType(code) {
     let t = (state.data.nonStandard || []).find(x => x.code === code);
-    if (t) return { t: t, bucket: 'nonStandard' };
+    if (t) return { t, bucket: 'nonStandard' };
     t = (state.data.traditional || []).find(x => x.code === code);
-    if (t) return { t: t, bucket: 'traditional' };
+    if (t) return { t, bucket: 'traditional' };
     return null;
   }
 
@@ -240,9 +304,23 @@
     const code = state.selectedCode;
     if (!code) return;
     const photos = state.photos[code] || [];
+    const captions = state.captions[code] || [];
     photos.forEach((src, i) => {
+      const captionInput = el('input', {
+        type: 'text',
+        class: 'caption-input',
+        placeholder: 'Photo credit / caption',
+        value: captions[i] || ''
+      });
+      captionInput.addEventListener('input', () => {
+        const arr = state.captions[code] || [];
+        arr[i] = captionInput.value.trim();
+        state.captions[code] = arr;
+        save(LS.captions, state.captions);
+      });
       const ph = el('div', { class: 'ph' }, [
-        el('img', { src: src, alt: 'photo ' + (i + 1) }),
+        el('img', { src, alt: 'photo ' + (i + 1) }),
+        captionInput,
         el('button', { type: 'button', title: 'Delete photo', onclick: () => removePhoto(code, i) }, '×')
       ]);
       mount.appendChild(ph);
@@ -257,7 +335,7 @@
       ? 'TRAD-' + Math.random().toString(36).slice(2, 6).toUpperCase()
       : 'NEW-' + Math.random().toString(36).slice(2, 6).toUpperCase();
     const t = {
-      code: code,
+      code,
       name: bucket === 'traditional' ? 'New traditional archetype' : 'New non-standard system',
       class: bucket === 'traditional' ? 'TRAD' : 'MET',
       class_full: bucket === 'traditional' ? 'Traditional' : 'Metal Frame',
@@ -293,18 +371,21 @@
     t.defective = $('#e-defective').checked;
     t.description = $('#e-desc').value.trim();
 
-    // Code change: migrate photo storage + stored code
     if (newCode && newCode !== t.code) {
       if (state.photos[t.code]) {
         state.photos[newCode] = state.photos[t.code];
         delete state.photos[t.code];
         save(LS.photos, state.photos);
       }
+      if (state.captions[t.code]) {
+        state.captions[newCode] = state.captions[t.code];
+        delete state.captions[t.code];
+        save(LS.captions, state.captions);
+      }
       t.code = newCode;
       state.selectedCode = newCode;
     }
 
-    // Bucket migration (TRAD ↔ non-standard)
     if (targetBucket !== found.bucket) {
       state.data[found.bucket] = state.data[found.bucket].filter(x => x.code !== t.code);
       (state.data[targetBucket] = state.data[targetBucket] || []).push(t);
@@ -326,6 +407,10 @@
       delete state.photos[state.selectedCode];
       save(LS.photos, state.photos);
     }
+    if (state.captions[state.selectedCode]) {
+      delete state.captions[state.selectedCode];
+      save(LS.captions, state.captions);
+    }
     persistData();
     clearEditor();
     renderList();
@@ -338,7 +423,7 @@
   }
 
   /* ==========================================================
-     Photos
+     Photos + captions
      ========================================================== */
   function onPhotoUpload(e) {
     const code = state.selectedCode;
@@ -349,10 +434,13 @@
 
     Promise.all(files.map(fileToDataUri)).then(uris => {
       state.photos[code] = (state.photos[code] || []).concat(uris);
+      // Add empty caption slots so the per-photo input lines up
+      state.captions[code] = (state.captions[code] || []).concat(uris.map(() => ''));
       save(LS.photos, state.photos);
+      save(LS.captions, state.captions);
       renderPhotos();
       renderList();
-      toast(`Added ${uris.length} photo${uris.length > 1 ? 's' : ''}.`);
+      toast(`Added ${uris.length} photo${uris.length > 1 ? 's' : ''}. Add a credit to each.`);
     }).catch(err => {
       console.error(err);
       toast('Photo upload failed.');
@@ -361,14 +449,15 @@
 
   function removePhoto(code, idx) {
     (state.photos[code] || []).splice(idx, 1);
+    if (state.captions[code]) state.captions[code].splice(idx, 1);
     save(LS.photos, state.photos);
+    save(LS.captions, state.captions);
     renderPhotos();
     renderList();
   }
 
   function fileToDataUri(file) {
     return new Promise((resolve, reject) => {
-      // Downscale large images to keep localStorage reasonable
       const reader = new FileReader();
       reader.onerror = reject;
       reader.onload = () => {
@@ -383,8 +472,7 @@
           }
           const canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
           resolve(canvas.toDataURL('image/jpeg', 0.82));
         };
         img.onerror = reject;
@@ -399,8 +487,8 @@
      ========================================================== */
   function exportJson() {
     const payload = JSON.parse(JSON.stringify(state.data));
-    // Embed photos as a separate top-level key so types.json stays readable.
     payload.photos = state.photos;
+    payload.photoCaptions = state.captions;
     payload.exportedAt = new Date().toISOString();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -421,42 +509,46 @@
         const parsed = JSON.parse(reader.result);
         if (!parsed.nonStandard && !parsed.traditional) throw new Error('Missing nonStandard/traditional keys');
 
-        // Extract photos from three possible locations and merge them all:
-        //   1. Top-level photos key  { code: [dataUri, ...] }
-        //   2. Inline photos field on each type object
-        //   3. Existing localStorage photos (don't wipe photos for types not in this import)
-        const merged = Object.assign({}, state.photos);
+        // Merge photos from three sources (top-level, inline, existing localStorage)
+        const mergedPhotos = Object.assign({}, state.photos);
+        const mergedCaps = Object.assign({}, state.captions);
+        if (parsed.photos) Object.assign(mergedPhotos, parsed.photos);
+        if (parsed.photoCaptions) Object.assign(mergedCaps, parsed.photoCaptions);
 
-        if (parsed.photos) {
-          Object.assign(merged, parsed.photos);
-        }
-
-        (parsed.nonStandard || []).forEach(t => {
-          if (t.photos && t.photos.length) {
-            merged[t.code] = (merged[t.code] || []).concat(
-              t.photos.filter(p => !(merged[t.code] || []).includes(p))
-            );
-          }
+        ['nonStandard', 'traditional'].forEach(k => {
+          (parsed[k] || []).forEach(t => {
+            if (t.photos && t.photos.length) {
+              mergedPhotos[t.code] = (mergedPhotos[t.code] || []).concat(
+                t.photos.filter(p => !(mergedPhotos[t.code] || []).includes(p))
+              );
+            }
+            if (t.photoCaptions && t.photoCaptions.length) {
+              mergedCaps[t.code] = (mergedCaps[t.code] || []).concat(t.photoCaptions);
+            }
+          });
         });
 
-        state.photos = merged;
+        state.photos = mergedPhotos;
+        state.captions = mergedCaps;
 
-        // Strip inline photos from the data objects so they aren't double-stored
-        const cleanNonStandard = (parsed.nonStandard || []).map(t => {
-          const { photos, ...rest } = t;
+        const stripInline = arr => (arr || []).map(t => {
+          const { photos, photoCaptions, ...rest } = t;
           return rest;
         });
 
         state.data = {
-          nonStandard: cleanNonStandard,
-          traditional: parsed.traditional || [],
+          nonStandard: stripInline(parsed.nonStandard),
+          traditional: stripInline(parsed.traditional),
+          settings: parsed.settings || state.data.settings || defaultSettings(),
           version: parsed.version || CFG.DATA_VERSION
         };
 
         persistData();
         save(LS.photos, state.photos);
+        save(LS.captions, state.captions);
         renderList();
         clearEditor();
+        fillSettingsForm();
 
         const photoCount = Object.values(state.photos).reduce((n, arr) => n + arr.length, 0);
         toast('Imported — ' + photoCount + ' photo' + (photoCount !== 1 ? 's' : '') + ' loaded.');
@@ -472,11 +564,17 @@
     if (!confirm('Reset to the shipped types.json? This clears local edits but keeps photos.')) return;
     try {
       const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION) + '&r=' + Date.now(), { cache: 'no-store' });
-      state.data = await res.json();
-      state.data.traditional = state.data.traditional || [];
+      const parsed = await res.json();
+      state.data = {
+        nonStandard: parsed.nonStandard || [],
+        traditional: parsed.traditional || [],
+        settings: parsed.settings || defaultSettings(),
+        version: parsed.version || CFG.DATA_VERSION
+      };
       persistData();
       renderList();
       clearEditor();
+      fillSettingsForm();
       toast('Reset to shipped.');
     } catch (e) {
       toast('Reset failed: ' + e.message);

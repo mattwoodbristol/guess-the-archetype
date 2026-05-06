@@ -106,6 +106,70 @@
     </div>
 
     <section class="admin-panel" style="margin-top:24px;">
+      <h3>Game settings</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:-4px;margin-bottom:14px;">
+        These values are saved into <code>types.json</code> on export. Players see them at runtime; redeploy the file to roll out changes.
+      </p>
+      <div class="admin-settings">
+        <div>
+          <label>Total flashcards per game</label>
+          <input id="s-total" type="number" min="1" max="60" />
+        </div>
+        <div>
+          <label>Number of traditional cards</label>
+          <input id="s-trad" type="number" min="0" max="60" />
+        </div>
+
+        <div class="full">
+          <div class="group">
+            <h4>Easy mode</h4>
+            <div class="grid">
+              <div>
+                <label>MCQ options</label>
+                <input id="s-easy-mcq" type="number" min="2" max="8" />
+              </div>
+              <div>
+                <label>Distractor scope</label>
+                <select id="s-easy-scope">
+                  <option value="sameClass">Same construction class</option>
+                  <option value="mixed">Mixed (any)</option>
+                </select>
+              </div>
+              <div class="full">
+                <label><input type="checkbox" id="s-easy-hint" /> Show construction class as a hint</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="full">
+          <div class="group">
+            <h4>Hard mode</h4>
+            <div class="grid">
+              <div>
+                <label>MCQ options</label>
+                <input id="s-hard-mcq" type="number" min="2" max="8" />
+              </div>
+              <div>
+                <label>Distractor scope</label>
+                <select id="s-hard-scope">
+                  <option value="sameClass">Same construction class</option>
+                  <option value="mixed">Mixed (any)</option>
+                </select>
+              </div>
+              <div class="full">
+                <label><input type="checkbox" id="s-hard-hint" /> Show construction class as a hint</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="admin-bar">
+        <button class="btn blue" id="btn-save-settings">Save settings</button>
+      </div>
+    </section>
+
+    <section class="admin-panel" style="margin-top:24px;">
       <h3>Data</h3>
       <p style="color:var(--muted);font-size:13px;margin-top:-4px;">
         Admin edits live in this browser's local storage. Export a JSON snapshot to share it with another device or bake it into the deployed app

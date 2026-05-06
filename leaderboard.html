@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leaderboard · Guess the Archetype</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="lb-page">
+
+    <header class="site-header">
+      <div class="mark" aria-hidden="true"></div>
+      <div>
+        <div class="sub">Transform-ER</div>
+        <h1>Guess the Archetype</h1>
+      </div>
+    </header>
+
+    <div class="lb-hero">
+      <div>
+        <h2>Leaderboard</h2>
+        <p class="lede">Top players from across the consortium. Best score per name & organisation, ties broken by most recent play.</p>
+      </div>
+      <a href="index.html" class="btn">Play the game →</a>
+    </div>
+
+    <div class="lb-table-wrap">
+      <div class="lb-filter" id="lb-filter">
+        <button class="chip active" data-filter="all">All players</button>
+        <button class="chip" data-filter="easy">Easy only</button>
+        <button class="chip" data-filter="hard">Hard only</button>
+      </div>
+      <div id="lb-mount">
+        <div class="empty">Loading leaderboard…</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="config.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const CFG = window.APP_CONFIG;
+      let allRows = [];
+      let filter = 'all';
+
+      function $(s, r) { return (r || document).querySelector(s); }
+      function $all(s, r) { return Array.from((r || document).querySelectorAll(s)); }
+      function el(tag, attrs, kids) {
+        const n = document.createElement(tag);
+        if (attrs) for (const k in attrs) {
+          if (k === 'class') n.className = attrs[k];
+          else n.setAttribute(k, attrs[k]);
+        }
+        if (kids) (Array.isArray(kids) ? kids : [kids]).forEach(c => {
+          if (c == null) return;
+          n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+        });
+        return n;
+      }
+
+      async function load() {
+        const mount = $('#lb-mount');
+        if (!CFG.APPS_SCRIPT_URL) {
+          mount.innerHTML = '<div class="empty">Backend URL not configured.</div>';
+          return;
+        }
+        try {
+          const url = CFG.APPS_SCRIPT_URL + '?action=leaderboard&n=' + (CFG.LEADERBOARD_FULL_ROWS || 100);
+          const res = await fetch(url);
+          allRows = await res.json();
+        } catch (e) {
+          mount.innerHTML = '<div class="empty">Couldn\'t reach the leaderboard. Try again later.</div>';
+          return;
+        }
+        if (!allRows || !allRows.length) {
+          mount.innerHTML = '<div class="empty">No scores recorded yet.</div>';
+          return;
+        }
+        renderTable();
+      }
+
+      function renderTable() {
+        const mount = $('#lb-mount');
+        let rows = allRows;
+        if (filter === 'easy') rows = rows.filter(r => (r.difficulty || '').toLowerCase() === 'easy');
+        if (filter === 'hard') rows = rows.filter(r => (r.difficulty || '').toLowerCase() === 'hard');
+        if (!rows.length) {
+          mount.innerHTML = '<div class="empty">No plays match this filter yet.</div>';
+          return;
+        }
+        const table = el('table');
+        const thead = el('thead', {}, el('tr', {}, [
+          el('th', {}, '#'),
+          el('th', {}, 'Name'),
+          el('th', {}, 'Organisation'),
+          el('th', {}, 'Mode'),
+          el('th', { style: 'text-align:right;' }, 'Score')
+        ]));
+        const tbody = el('tbody');
+        rows.forEach((r, i) => {
+          const diff = (r.difficulty || '').toLowerCase();
+          const pillClass = diff === 'hard' ? 'diff-pill hard' : 'diff-pill easy';
+          const pillText = diff ? diff.toUpperCase() : '—';
+          const tr = el('tr', {}, [
+            el('td', { class: 'rank' }, String(i + 1)),
+            el('td', {}, r.name || '—'),
+            el('td', {}, r.org || '—'),
+            el('td', { class: 'diff' }, el('span', { class: pillClass }, pillText)),
+            el('td', { class: 'score' }, (r.score || 0) + ' / ' + (r.total || '—'))
+          ]);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        mount.innerHTML = '';
+        mount.appendChild(table);
+      }
+
+      $all('#lb-filter .chip').forEach(c => c.addEventListener('click', () => {
+        $all('#lb-filter .chip').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+        filter = c.dataset.filter;
+        renderTable();
+      }));
+
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+      else load();
+    })();
+  </script>
+</body>
+</html>

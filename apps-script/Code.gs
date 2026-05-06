@@ -1,31 +1,41 @@
 /**
- * Transform-ER · "Guess the Archetype" — Apps Script backend
+ * Transform-ER · "Guess the Archetype" — Apps Script backend (v2)
  * ----------------------------------------------------------
- * Deploy this as a Web App (see README.md). It powers two endpoints on a single URL:
+ *   POST  {JSON payload from app.js}            → appends to "Submissions", "Portfolio", "Leaderboard"
+ *   GET   ?action=leaderboard&n=10              → [{name, org, score, total, difficulty, playedAt}, ...]
  *
- *   POST  {JSON payload from app.js}            → appends to "Submissions", "Portfolio", "Leaderboard" sheets
- *   GET   ?action=leaderboard&n=10              → returns [{name, org, score, total, playedAt}, ...]
+ * Contact details (email, phone) live only in "Submissions" — keep that tab private.
+ * "Leaderboard" only contains name, org, score, total, difficulty — safe to expose.
  *
- * Contact details (email, phone) are only written to "Submissions", which you keep private.
- * The "Leaderboard" sheet contains only name + org + score, safe to expose via GET.
- *
- * SHEET NAMES (will be created automatically if missing):
- *   - "Submissions" : one row per play, includes contact details. KEEP PRIVATE.
- *   - "Portfolio"   : one row per traditional-card answer (stock data). Use for analysis.
- *   - "Leaderboard" : name, org, score, total, playedAt. Safe to read publicly.
+ * If you previously deployed v1: ADD these columns to existing sheets
+ *   Submissions  — append column 'difficulty' to header row
+ *   Leaderboard  — append column 'difficulty'
+ *   Portfolio    — append columns 'kind', 'skipped'
+ * Or simply: rename the existing sheets out of the way (e.g. add suffix '_v1') and let v2 create fresh ones.
  */
 
 const SHEET_SUBMISSIONS = 'Submissions';
-const SHEET_PORTFOLIO = 'Portfolio';
+const SHEET_PORTFOLIO   = 'Portfolio';
 const SHEET_LEADERBOARD = 'Leaderboard';
+
+const HEADER_SUBMISSIONS = [
+  'playedAt', 'name', 'org', 'role', 'orgLocation', 'email', 'phone',
+  'difficulty', 'score', 'total', 'durationMs', 'answersJson', 'version'
+];
+const HEADER_PORTFOLIO = [
+  'playedAt', 'org', 'orgLocation', 'contactEmail',
+  'kind', 'archetypeCode', 'archetypeName',
+  'has', 'count', 'bespokeName', 'propertyLocations', 'skipped'
+];
+const HEADER_LEADERBOARD = [
+  'playedAt', 'name', 'org', 'difficulty', 'score', 'total'
+];
 
 /** Entry point for POST — record a play. */
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
-    if (payload.action !== 'submit') {
-      return jsonOut({ ok: false, error: 'unknown action' });
-    }
+    if (payload.action !== 'submit') return jsonOut({ ok: false, error: 'unknown action' });
     writeSubmission(payload);
     writePortfolio(payload);
     writeLeaderboard(payload);
@@ -40,84 +50,119 @@ function doGet(e) {
   const action = (e.parameter && e.parameter.action) || 'leaderboard';
   if (action === 'leaderboard') {
     const n = parseInt((e.parameter && e.parameter.n) || '10', 10);
-    return jsonOut(getLeaderboard(isNaN(n) ? 10 : Math.min(n, 100)));
+    return jsonOut(getLeaderboard(isNaN(n) ? 10 : Math.min(n, 200)));
   }
   return jsonOut({ ok: false, error: 'unknown action' });
 }
 
-/* ---------------- writers ---------------- */
+/* ---------------- writers ----------------
+   Writes are column-by-column against the LIVE sheet header so that v1 sheets
+   without 'difficulty' continue to fill the right cells; missing columns just
+   stay empty. New columns appear automatically when ensureSheet upgrades the
+   header (see helpers below). */
 
 function writeSubmission(payload) {
-  const sheet = ensureSheet(SHEET_SUBMISSIONS, [
-    'playedAt', 'name', 'org', 'role', 'orgLocation', 'email', 'phone',
-    'score', 'total', 'durationMs', 'answersJson', 'version'
-  ]);
+  const sheet = ensureSheet(SHEET_SUBMISSIONS, HEADER_SUBMISSIONS);
   const p = payload.player || {};
   const r = payload.result || {};
-  sheet.appendRow([
-    payload.submittedAt || new Date().toISOString(),
-    p.name || '', p.org || '', p.role || '', p.orgLocation || '',
-    p.email || '', p.phone || '',
-    r.score || 0, r.total || 0, r.durationMs || 0,
-    JSON.stringify(r.answers || []),
-    payload.version || ''
-  ]);
+  const fields = {
+    playedAt:    payload.submittedAt || new Date().toISOString(),
+    name:        p.name || '',
+    org:         p.org || '',
+    role:        p.role || '',
+    orgLocation: p.orgLocation || '',
+    email:       p.email || '',
+    phone:       p.phone || '',
+    difficulty:  payload.difficulty || '',
+    score:       r.score || 0,
+    total:       r.total || 0,
+    durationMs:  r.durationMs || 0,
+    answersJson: JSON.stringify(r.answers || []),
+    version:     payload.version || ''
+  };
+  appendKeyedRow(sheet, fields);
 }
 
 function writePortfolio(payload) {
-  const sheet = ensureSheet(SHEET_PORTFOLIO, [
-    'playedAt', 'org', 'orgLocation', 'contactEmail',
-    'archetypeCode', 'archetypeName', 'has', 'count', 'bespokeName', 'propertyLocations'
-  ]);
+  const sheet = ensureSheet(SHEET_PORTFOLIO, HEADER_PORTFOLIO);
   const p = payload.player || {};
   const when = payload.submittedAt || new Date().toISOString();
   (payload.portfolio || []).forEach(function (row) {
-    sheet.appendRow([
-      when, p.org || '', p.orgLocation || '', p.email || '',
-      row.code || '', row.name || '',
-      row.has || '', row.count || '', row.bespokeName || '', row.locations || ''
-    ]);
+    appendKeyedRow(sheet, {
+      playedAt:           when,
+      org:                p.org || '',
+      orgLocation:        p.orgLocation || '',
+      contactEmail:       p.email || '',
+      kind:               row.kind || '',
+      archetypeCode:      row.code || '',
+      archetypeName:      row.name || '',
+      has:                row.has || '',
+      count:              row.count || '',
+      bespokeName:        row.bespokeName || '',
+      propertyLocations:  row.locations || '',
+      skipped:            row.skipped ? 'true' : ''
+    });
   });
 }
 
 function writeLeaderboard(payload) {
-  const sheet = ensureSheet(SHEET_LEADERBOARD, [
-    'playedAt', 'name', 'org', 'score', 'total'
-  ]);
+  const sheet = ensureSheet(SHEET_LEADERBOARD, HEADER_LEADERBOARD);
   const p = payload.player || {};
   const r = payload.result || {};
-  sheet.appendRow([
-    payload.submittedAt || new Date().toISOString(),
-    p.name || '', p.org || '',
-    r.score || 0, r.total || 0
-  ]);
+  appendKeyedRow(sheet, {
+    playedAt:   payload.submittedAt || new Date().toISOString(),
+    name:       p.name || '',
+    org:        p.org || '',
+    difficulty: payload.difficulty || '',
+    score:      r.score || 0,
+    total:      r.total || 0
+  });
+}
+
+/** Append a row to the sheet in whatever column order the live header has. */
+function appendKeyedRow(sheet, fields) {
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const row = header.map(function (col) {
+    return Object.prototype.hasOwnProperty.call(fields, col) ? fields[col] : '';
+  });
+  sheet.appendRow(row);
 }
 
 /* ---------------- readers ---------------- */
 
 function getLeaderboard(n) {
-  const sheet = ensureSheet(SHEET_LEADERBOARD, [
-    'playedAt', 'name', 'org', 'score', 'total'
-  ]);
+  const sheet = ensureSheet(SHEET_LEADERBOARD, HEADER_LEADERBOARD);
   const last = sheet.getLastRow();
   if (last < 2) return [];
-  const rows = sheet.getRange(2, 1, last - 1, 5).getValues();
+  // Read all six columns, but be tolerant of older rows that might have only five.
+  const colCount = Math.min(sheet.getLastColumn(), HEADER_LEADERBOARD.length);
+  const rows = sheet.getRange(2, 1, last - 1, colCount).getValues();
+  const headerRow = sheet.getRange(1, 1, 1, colCount).getValues()[0];
+  const idx = (h) => headerRow.indexOf(h);
 
-  // Collapse to best score per (name, org), ties broken by most recent play.
+  const iAt    = idx('playedAt');
+  const iName  = idx('name');
+  const iOrg   = idx('org');
+  const iDiff  = idx('difficulty');
+  const iScore = idx('score');
+  const iTotal = idx('total');
+
+  // Best score per (name, org, difficulty) — ties broken by most recent.
   const best = {};
   rows.forEach(function (row) {
-    const playedAt = row[0];
-    const name = String(row[1] || '').trim();
-    const org = String(row[2] || '').trim();
-    const score = Number(row[3] || 0);
-    const total = Number(row[4] || 0);
+    const playedAt = iAt    >= 0 ? row[iAt]    : '';
+    const name     = iName  >= 0 ? String(row[iName]  || '').trim() : '';
+    const org      = iOrg   >= 0 ? String(row[iOrg]   || '').trim() : '';
+    const diff     = iDiff  >= 0 ? String(row[iDiff]  || '').trim().toLowerCase() : '';
+    const score    = iScore >= 0 ? Number(row[iScore] || 0) : 0;
+    const total    = iTotal >= 0 ? Number(row[iTotal] || 0) : 0;
     if (!name && !org) return;
-    const key = (name + '|' + org).toLowerCase();
+    const key = (name + '|' + org + '|' + diff).toLowerCase();
     const prev = best[key];
     if (!prev
         || score > prev.score
         || (score === prev.score && new Date(playedAt) > new Date(prev.playedAt))) {
-      best[key] = { name: name, org: org, score: score, total: total, playedAt: playedAt };
+      best[key] = { name: name, org: org, difficulty: diff, score: score, total: total, playedAt: playedAt };
     }
   });
 
@@ -141,10 +186,18 @@ function ensureSheet(name, header) {
     sheet.setFrozenRows(1);
     return sheet;
   }
-  // If the sheet is empty, write the header.
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(header);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  // Best-effort header upgrade: if the sheet has fewer columns than the new header,
+  // append the missing columns onto the header row so doPost can write to them.
+  const existingCols = sheet.getLastColumn();
+  if (existingCols < header.length) {
+    const existingHeader = sheet.getRange(1, 1, 1, existingCols).getValues()[0];
+    const missing = header.slice(existingCols);
+    sheet.getRange(1, existingCols + 1, 1, missing.length).setValues([missing]);
   }
   return sheet;
 }
@@ -155,9 +208,8 @@ function jsonOut(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/* ---------------- optional: CSV/one-off testing ---------------- */
+/* ---------------- testing ---------------- */
 
-/** Manual test — run once from the Apps Script editor to check permissions. */
 function test_writeFakeRow() {
   doPost({
     postData: {
@@ -165,10 +217,13 @@ function test_writeFakeRow() {
         action: 'submit',
         version: 'test',
         submittedAt: new Date().toISOString(),
+        difficulty: 'hard',
         player: { name: 'Test User', org: 'Test Org', role: 'Tester', orgLocation: 'London', email: 't@example.com', phone: '' },
         result: { score: 12, total: 16, durationMs: 60000, answers: [] },
         portfolio: [
-          { code: 'TRAD-VT-TER', name: 'Victorian terrace', has: 'yes', count: '1-50', bespokeName: 'VT-A', locations: 'Salford' }
+          { kind: 'trad', code: 'TRAD-VT-TER', name: 'Victorian terrace', has: 'yes', count: '1-50', bespokeName: 'VT-A', locations: 'Salford' },
+          { kind: 'nonStd', code: 'P003', name: 'Airey', has: 'yes', count: '1-50', locations: 'Manchester' },
+          { kind: 'trad', code: 'TRAD-IW-SEMI', name: 'Inter-war semi', skipped: true }
         ]
       })
     }

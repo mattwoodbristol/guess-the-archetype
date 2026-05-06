@@ -937,3 +937,294 @@ a:hover { text-decoration: underline; }
   margin-top: 6px;
 }
 .photo-upload-label:hover { opacity: 0.85; }
+
+/* =================================================================
+   v2 additions — difficulty picker, intro leaderboard, skip button,
+   post-MCQ portfolio prompt, photo captions, settings, lb page
+   ================================================================= */
+
+/* ---- difficulty picker (intro screen) ---- */
+.difficulty-row { margin: 24px 0 0; grid-column: 1 / -1; }
+.difficulty-row > .label-line {
+  font-size: 13px; color: var(--muted); margin-bottom: 8px;
+  letter-spacing: 0.04em;
+}
+.difficulty-options {
+  display: grid; gap: 12px;
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 480px) { .difficulty-options { grid-template-columns: 1fr; } }
+.difficulty-card {
+  appearance: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--white);
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s, transform 0.06s;
+}
+.difficulty-card:hover { border-color: var(--light-blue); background: var(--panel-strong); }
+.difficulty-card.active {
+  border-color: var(--ter-pink);
+  background: rgba(255,0,128,0.12);
+}
+.difficulty-card .level {
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--light-blue); font-weight: 700; margin-bottom: 4px;
+}
+.difficulty-card.active .level { color: var(--ter-pink); }
+.difficulty-card .lbl { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.difficulty-card .desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* ---- intro leaderboard ---- */
+.intro-leaderboard {
+  margin-top: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.intro-leaderboard .head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 22px 4px;
+}
+.intro-leaderboard h3 {
+  margin: 0; font-size: 13px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--light-blue); font-weight: 700;
+}
+.intro-leaderboard .head a {
+  font-size: 12px; color: var(--muted); letter-spacing: 0.04em;
+}
+.intro-leaderboard .head a:hover { color: var(--white); }
+.intro-leaderboard table { width: 100%; border-collapse: collapse; }
+.intro-leaderboard th, .intro-leaderboard td {
+  padding: 8px 22px; text-align: left; font-size: 13px;
+  border-top: 1px solid var(--border);
+}
+.intro-leaderboard th {
+  font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px;
+}
+.intro-leaderboard td.rank { font-weight: 700; color: var(--ter-pink); width: 36px; }
+.intro-leaderboard td.score { font-weight: 700; text-align: right; }
+.intro-leaderboard td.diff { font-size: 11px; color: var(--muted); }
+.intro-leaderboard .empty { padding: 18px 22px 22px; color: var(--muted); font-size: 13px; }
+
+/* difficulty pill (used on leaderboard rows) */
+.diff-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.diff-pill.easy { background: rgba(178,237,209,0.18); color: var(--mint); }
+.diff-pill.hard { background: rgba(255,0,128,0.16); color: var(--ter-pink); }
+
+/* ---- card actions: skip button styling ---- */
+.card .actions { gap: 10px; }
+.btn.skip {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  padding: 10px 16px;
+}
+.btn.skip:hover { color: var(--white); border-color: var(--light-blue); }
+
+/* ---- post-MCQ portfolio prompt (non-traditional cards) ---- */
+.portfolio-prompt {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  background: rgba(115,215,255,0.06);
+  border: 1px solid rgba(115,215,255,0.25);
+  display: none;
+  animation: fadeIn 0.2s ease both;
+}
+.portfolio-prompt.show { display: block; }
+.portfolio-prompt .pp-q {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--light-blue);
+}
+.portfolio-prompt .choices { display: flex; gap: 8px; flex-wrap: wrap; }
+.portfolio-prompt .chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--white);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.portfolio-prompt .chip:hover { background: var(--panel); }
+.portfolio-prompt .chip.active {
+  background: var(--light-blue); color: var(--navy);
+  border-color: var(--light-blue); font-weight: 700;
+}
+.portfolio-prompt .pp-extra { display: none; margin-top: 12px; }
+.portfolio-prompt .pp-extra.show { display: grid; gap: 12px; }
+.portfolio-prompt .pp-extra .row { display: grid; gap: 6px; }
+.portfolio-prompt label {
+  font-size: 12px; color: var(--muted);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.portfolio-prompt input[type=text] {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.2);
+  color: var(--white);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+
+/* ---- photo caption overlay (game side) ---- */
+.card .photo .caption {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: rgba(0,0,0,0.55);
+  color: rgba(255,255,255,0.92);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(6px);
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- admin: settings panel ---- */
+.admin-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+.admin-settings .full { grid-column: 1 / -1; }
+.admin-settings label { font-size: 12px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+.admin-settings input, .admin-settings select {
+  width: 100%;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  color: var(--white);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.admin-settings .group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.admin-settings .group h4 {
+  margin: 0 0 10px; font-size: 13px; color: var(--ter-pink);
+  text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700;
+}
+.admin-settings .group .grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px;
+}
+
+/* ---- admin: photo caption inputs (one per photo) ---- */
+.admin-photos .ph .caption-input {
+  position: absolute;
+  left: 6px; right: 36px; bottom: 6px;
+  background: rgba(0,0,0,0.7);
+  border: 0;
+  color: var(--white);
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  outline: none;
+}
+.admin-photos .ph .caption-input::placeholder { color: rgba(255,255,255,0.5); }
+.admin-photos .ph .caption-input:focus { background: rgba(0,0,0,0.9); }
+
+/* ---- standalone leaderboard.html page ---- */
+.lb-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+.lb-page .lb-hero {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.lb-page .lb-hero::before {
+  content: ""; position: absolute; right: -80px; top: -80px;
+  width: 220px; height: 220px; border-radius: 50%;
+  border: 2px solid rgba(255,0,128,0.32); pointer-events: none;
+}
+.lb-page .lb-hero h2 {
+  margin: 0; font-weight: 800;
+  font-size: clamp(24px, 3vw, 32px);
+}
+.lb-page .lb-hero .lede {
+  margin: 4px 0 0; color: var(--muted); font-size: 14px;
+}
+.lb-page .lb-table-wrap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.lb-page .lb-filter {
+  display: flex; gap: 8px; padding: 14px 18px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.lb-page .lb-filter .chip {
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); font-size: 12px; cursor: pointer;
+}
+.lb-page .lb-filter .chip.active {
+  background: var(--mid-blue); color: var(--white); border-color: var(--mid-blue);
+}
+.lb-page table { width: 100%; border-collapse: collapse; }
+.lb-page th, .lb-page td {
+  padding: 10px 18px; text-align: left; font-size: 14px;
+  border-top: 1px solid var(--border);
+}
+.lb-page th {
+  font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px;
+}
+.lb-page td.rank { font-weight: 700; color: var(--ter-pink); width: 40px; }
+.lb-page td.score { font-weight: 700; text-align: right; }
+.lb-page td.diff  { font-size: 12px; color: var(--muted); }
+.lb-page .empty { padding: 24px; color: var(--muted); font-size: 14px; }
+
+/* ---- minor: legacy photo upload label normalisation ---- */
+label.photo-upload-label {
+  display: inline-block;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  margin-right: 8px;
+}
+label.photo-upload-label:hover { background: var(--panel-strong); border-color: var(--light-blue); }
+input#e-photo-file { display: none; }

@@ -57,6 +57,22 @@
             <input id="f-phone" name="phone" type="tel" autocomplete="tel" />
           </div>
 
+          <div class="difficulty-row">
+            <div class="label-line">Pick a difficulty</div>
+            <div class="difficulty-options" id="difficulty-options">
+              <button type="button" class="difficulty-card active" data-difficulty="easy">
+                <div class="level">Easy</div>
+                <div class="lbl">Friendly round</div>
+                <div class="desc">3 options · construction class shown · distractors picked from the same family</div>
+              </button>
+              <button type="button" class="difficulty-card" data-difficulty="hard">
+                <div class="level">Hard</div>
+                <div class="lbl">Expert round</div>
+                <div class="desc">5 options · no class hint · distractors mixed across all systems</div>
+              </button>
+            </div>
+          </div>
+
           <div class="consent">
             By playing you agree that Transform‑ER can contact you about this project and store the portfolio data you provide.
             Your contact details are not shown on the public leaderboard.
@@ -67,6 +83,17 @@
             <span id="intro-error" class="counter" style="color: var(--light-pink); display:none;"></span>
           </div>
         </form>
+      </div>
+
+      <!-- Top-N leaderboard below intro -->
+      <div class="intro-leaderboard">
+        <div class="head">
+          <h3>Leaderboard · top players</h3>
+          <a href="leaderboard.html">View full board →</a>
+        </div>
+        <div id="intro-leaderboard-mount">
+          <div class="empty">Loading…</div>
+        </div>
       </div>
 
       <div class="footer">Transform · Engage · Retrofit — 13 partners, 1 million homes/year by 2030</div>
@@ -124,10 +151,37 @@
         <h3 class="prompt">Pick one of the four below</h3>
         <div class="options"></div>
         <div class="reveal">
-          <h4 id="reveal-title">Correct answer</h4>
+          <h4 class="reveal-title">Correct answer</h4>
           <div class="fact"></div>
           <div class="meta"></div>
         </div>
+
+        <!-- Post-MCQ portfolio prompt -->
+        <div class="portfolio-prompt">
+          <div class="pp-q">Do you have any of these in your portfolio?</div>
+          <div class="choices has">
+            <button type="button" class="chip" data-value="yes">Yes</button>
+            <button type="button" class="chip" data-value="no">No</button>
+            <button type="button" class="chip" data-value="unsure">Not sure</button>
+          </div>
+          <div class="pp-extra">
+            <div class="row count">
+              <label>Roughly how many?</label>
+              <div class="choices count-chips">
+                <button type="button" class="chip" data-value="1-50">1–50</button>
+                <button type="button" class="chip" data-value="51-250">51–250</button>
+                <button type="button" class="chip" data-value="251-1000">251–1,000</button>
+                <button type="button" class="chip" data-value="1001-5000">1,001–5,000</button>
+                <button type="button" class="chip" data-value="5000+">5,000+</button>
+              </div>
+            </div>
+            <div class="row">
+              <label>Location(s) of these properties</label>
+              <input type="text" class="locations-input" placeholder="e.g. Salford, Trafford, Oldham" />
+            </div>
+          </div>
+        </div>
+
         <div class="actions" style="display:none;">
           <button class="btn next">Next card →</button>
         </div>
@@ -179,6 +233,7 @@
         </div>
 
         <div class="actions">
+          <button class="btn skip" type="button">Skip</button>
           <button class="btn next">Next card →</button>
         </div>
       </div>

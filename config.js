@@ -9,18 +9,28 @@ window.APP_CONFIG = {
   // Password required to access /admin.html. Change this before going live.
   ADMIN_PASSWORD: "transform-er-admin-2026",
 
+  // ===== fallback defaults =====
+  // Admin can override these per-game via the Settings panel; values saved into
+  // types.json under `settings:` win over anything here at runtime.
+
   // How many cards per game (must be >= TRADITIONAL_PER_GAME).
   CARDS_PER_GAME: 20,
 
   // How many of those cards must be traditional-construction (portfolio-data) cards.
   TRADITIONAL_PER_GAME: 4,
 
-  // How many multiple-choice options to show for non-standard cards (including the correct one).
-  MCQ_OPTIONS: 4,
+  // Easy/hard mode defaults — overridden by data.settings.difficulty when present.
+  DIFFICULTY: {
+    easy: { mcqOptions: 3, distractorScope: 'sameClass', showHint: true  },
+    hard: { mcqOptions: 5, distractorScope: 'mixed',     showHint: false }
+  },
 
-  // How many rows of leaderboard to show on the end screen.
+  // How many rows of leaderboard to show on the intro + end screen.
   LEADERBOARD_ROWS: 10,
 
+  // How many rows on the standalone full leaderboard page.
+  LEADERBOARD_FULL_ROWS: 100,
+
   // Build number — bump when you deploy a new types.json so the browser refetches.
-  DATA_VERSION: "2026-04-22-v1"
+  DATA_VERSION: "2026-05-06-v2"
 };
