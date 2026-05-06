@@ -119,9 +119,9 @@
     return data;
   }
 
-  function getPhotosFor(code) {
+  function getPhotosFor(code, typeObj) {
     const store = loadJSON(LS.adminPhotos, {});
-    return store[code] || [];
+    return store[code] || (typeObj && typeObj.photos) || [];
   }
 
   /* ==========================================================
@@ -132,7 +132,7 @@
     const root = tpl.firstElementChild;
 
     // Photo (if admin uploaded any)
-    const photos = getPhotosFor(pick.code);
+    const photos = getPhotosFor(pick.code, pick);
     const photoHolder = $('.photo', root);
     if (photos.length > 0) {
       const idx = Math.floor(Math.random() * photos.length);
@@ -217,7 +217,7 @@
     $('.placeholder-label', root).textContent = pick.name;
 
     // Admin-uploaded photos?
-    const photos = getPhotosFor(pick.code);
+    const photos = getPhotosFor(pick.code, pick);
     if (photos.length > 0) {
       const photoHolder = $('.photo', root);
       const tag = photoHolder.querySelector('.tag');
