@@ -21,8 +21,10 @@ const SHEET_SETTINGS      = 'Settings';
 const SHEET_DISAGREEMENTS = 'Disagreements';
 const SHEET_PHOTOS        = 'Photos';
 const PHOTO_FOLDER_NAME   = 'Guess the Archetype photos';
-// Pre-configured Drive folder for photo uploads. Leave blank to auto-create on first upload.
-const PHOTO_FOLDER_ID     = '1-aL2a2M8Ciq-adOGTUeEw4eYWD3Bhy3K';
+// Pre-configured Drive folder for photo uploads. Leave blank ('') to auto-create
+// a folder in the deploying user's Drive on first upload — that's the simplest
+// path because the user automatically gets Editor access.
+const PHOTO_FOLDER_ID     = '';
 
 // Must match config.js ADMIN_PASSWORD. Used to gate /saveSettings.
 // Public-by-design (config.js is also public), but stops random spam.
