@@ -18,16 +18,18 @@
   function $(s, r) { return (r || document).querySelector(s); }
   function $all(s, r) { return Array.from((r || document).querySelectorAll(s)); }
   function load(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-  // Best-effort localStorage write. Quota errors are normal when photos are big;
-  // we just log them. Admin's in-memory state still works and they can export.
+  // Best-effort localStorage write. Quota errors are silent — in-memory state still works.
   function save(k, v) {
     try { localStorage.setItem(k, JSON.stringify(v)); return true; }
     catch (e) {
       try { localStorage.removeItem(k); } catch (e2) {}
-      console.warn('localStorage write failed for ' + k + ' (likely quota). In-memory state is still good.', e);
       return false;
     }
   }
+  // Photos are NEVER persisted to localStorage anymore — they live on the backend
+  // (Drive + Photos sheet) and are fetched fresh by admin and game on every load.
+  // This wrapper exists so existing call sites stay compact.
+  function savePhotosLocal() { /* intentionally no-op */ }
   // Strip photo blobs out of a types-shaped object so it can be persisted to localStorage.
   function stripPhotosFromTypeData(d) {
     if (!d) return d;
@@ -80,13 +82,29 @@
   /* ---------- backend helpers ---------- */
   async function backendPost(payload) {
     if (!CFG.APPS_SCRIPT_URL) throw new Error('APPS_SCRIPT_URL not configured');
-    const res = await fetch(CFG.APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(Object.assign({ password: CFG.ADMIN_PASSWORD }, payload))
-    });
-    return await res.json();
+    let res;
+    try {
+      res = await fetch(CFG.APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ password: CFG.ADMIN_PASSWORD }, payload))
+      });
+    } catch (e) {
+      throw new Error('network error reaching Apps Script: ' + (e && e.message ? e.message : e));
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+    const text = await res.text();
+    let parsed;
+    try { parsed = JSON.parse(text); }
+    catch (e) {
+      const snippet = text.slice(0, 240).replace(/\s+/g, ' ').trim();
+      throw new Error('non-JSON response (likely script not redeployed or unauthorized): ' + snippet);
+    }
+    if (parsed && parsed.ok === false) {
+      throw new Error('server: ' + (parsed.error || 'unknown error'));
+    }
+    return parsed;
   }
   async function backendUploadPhoto(code, dataUri, filename, caption) {
     return backendPost({ action: 'uploadPhoto', code, dataUri, filename, caption: caption || '' });
@@ -189,7 +207,7 @@
             state.captions[code] = (live.photoCaptions && live.photoCaptions[code]) || [];
             state.fileIds[code] = (live.photoFileIds && live.photoFileIds[code]) || [];
           });
-          save(LS.photos, state.photos);
+          savePhotosLocal();
           save(LS.captions, state.captions);
           save(LS.fileIds, state.fileIds);
         }
@@ -359,6 +377,7 @@
 
     setMigrationStatus('Migrating 0 / ' + todo.length + '…');
     let ok = 0;
+    let lastErr = null;
     for (let i = 0; i < todo.length; i++) {
       setMigrationStatus('Migrating ' + (i + 1) + ' / ' + todo.length + '…');
       const item = todo[i];
@@ -371,24 +390,35 @@
           if (!state.fileIds[item.code]) state.fileIds[item.code] = [];
           state.fileIds[item.code][item.idx] = result.fileId;
           ok++;
+        } else {
+          lastErr = (result && result.error) ? result.error : 'unknown error';
+          console.warn('Upload returned non-ok for ' + item.code + '#' + item.idx, result);
+          // Stop at the first failure — running 37 fails in a row is wasteful.
+          // Show the error so the user can see what's wrong.
+          setMigrationStatus('Failed at ' + (i + 1) + ' / ' + todo.length + ' — ' + lastErr);
+          break;
         }
       } catch (e) {
+        lastErr = (e && e.message) ? e.message : String(e);
         console.warn('Migration error for ' + item.code + '#' + item.idx, e);
+        setMigrationStatus('Failed at ' + (i + 1) + ' / ' + todo.length + ' — ' + lastErr);
+        break;
       }
-      // tiny throttle to be polite to the Apps Script + Drive
       await new Promise(r => setTimeout(r, 250));
     }
-    save(LS.photos, state.photos);
+    savePhotosLocal();
     save(LS.fileIds, state.fileIds);
-    setMigrationStatus(ok + ' / ' + todo.length + ' migrated.');
+    if (ok === todo.length) {
+      setMigrationStatus(ok + ' / ' + todo.length + ' migrated.');
+      toast('All photos migrated. Export types.json and push so visitors stop loading the old base64 blob.');
+    } else if (ok > 0) {
+      toast(ok + ' uploaded before the run stopped. ' + (lastErr ? '(' + lastErr + ')' : ''));
+    } else {
+      toast('Migration failed — ' + (lastErr || 'see console') + '. Check the script is redeployed.');
+    }
     refreshMigrationPanel();
     renderPhotos();
     renderList();
-    if (ok === todo.length) {
-      toast('All photos migrated. Export types.json and push so visitors stop loading the old base64 blob.');
-    } else {
-      toast('Some uploads failed — see console. You can run migration again.');
-    }
   }
 
   /* ==========================================================
@@ -585,7 +615,7 @@
       if (state.photos[t.code]) {
         state.photos[newCode] = state.photos[t.code];
         delete state.photos[t.code];
-        save(LS.photos, state.photos);
+        savePhotosLocal();
       }
       if (state.captions[t.code]) {
         state.captions[newCode] = state.captions[t.code];
@@ -615,7 +645,7 @@
     state.data[found.bucket] = state.data[found.bucket].filter(x => x.code !== state.selectedCode);
     if (state.photos[state.selectedCode]) {
       delete state.photos[state.selectedCode];
-      save(LS.photos, state.photos);
+      savePhotosLocal();
     }
     if (state.captions[state.selectedCode]) {
       delete state.captions[state.selectedCode];
@@ -660,7 +690,7 @@
           state.photos[code]   = (state.photos[code] || []).concat(result.url);
           state.captions[code] = (state.captions[code] || []).concat('');
           state.fileIds[code]  = (state.fileIds[code] || []).concat(result.fileId);
-          save(LS.photos, state.photos);
+          savePhotosLocal();
           save(LS.captions, state.captions);
           save(LS.fileIds, state.fileIds);
           okCount++;
@@ -683,7 +713,7 @@
     (state.photos[code] || []).splice(idx, 1);
     if (state.captions[code]) state.captions[code].splice(idx, 1);
     if (state.fileIds[code]) state.fileIds[code].splice(idx, 1);
-    save(LS.photos, state.photos);
+    savePhotosLocal();
     save(LS.captions, state.captions);
     save(LS.fileIds, state.fileIds);
     renderPhotos();
@@ -791,7 +821,7 @@
         };
 
         persistData();
-        save(LS.photos, state.photos);
+        savePhotosLocal();
         save(LS.captions, state.captions);
         renderList();
         clearEditor();
