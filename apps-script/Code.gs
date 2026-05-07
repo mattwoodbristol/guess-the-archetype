@@ -19,6 +19,10 @@ const SHEET_PORTFOLIO     = 'Portfolio';
 const SHEET_LEADERBOARD   = 'Leaderboard';
 const SHEET_SETTINGS      = 'Settings';
 const SHEET_DISAGREEMENTS = 'Disagreements';
+const SHEET_PHOTOS        = 'Photos';
+const PHOTO_FOLDER_NAME   = 'Guess the Archetype photos';
+// Pre-configured Drive folder for photo uploads. Leave blank to auto-create on first upload.
+const PHOTO_FOLDER_ID     = '1-aL2a2M8Ciq-adOGTUeEw4eYWD3Bhy3K';
 
 // Must match config.js ADMIN_PASSWORD. Used to gate /saveSettings.
 // Public-by-design (config.js is also public), but stops random spam.
@@ -40,6 +44,9 @@ const HEADER_DISAGREEMENTS = [
   'playedAt', 'name', 'org', 'orgLocation', 'contactEmail',
   'archetypeCode', 'officialName', 'suggestedName'
 ];
+const HEADER_PHOTOS = [
+  'code', 'fileId', 'url', 'caption', 'order', 'uploadedAt'
+];
 
 /** Entry point for POST. */
 function doPost(e) {
@@ -53,10 +60,25 @@ function doPost(e) {
       return jsonOut({ ok: true });
     }
     if (payload.action === 'saveSettings') {
-      if (payload.password !== ADMIN_PASSWORD) {
-        return jsonOut({ ok: false, error: 'auth failed' });
-      }
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
       saveSettingsToSheet(payload.settings || {});
+      return jsonOut({ ok: true });
+    }
+    if (payload.action === 'uploadPhoto') {
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
+      const r = uploadPhotoToDrive(payload.dataUri, payload.filename || (payload.code + '.jpg'));
+      addPhotoToSheet(payload.code, r.fileId, r.url, payload.caption || '');
+      return jsonOut({ ok: true, fileId: r.fileId, url: r.url });
+    }
+    if (payload.action === 'deletePhoto') {
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
+      try { DriveApp.getFileById(payload.fileId).setTrashed(true); } catch (e) { /* already gone */ }
+      removePhotoFromSheet(payload.fileId);
+      return jsonOut({ ok: true });
+    }
+    if (payload.action === 'updateCaption') {
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
+      updateCaptionInSheet(payload.fileId, payload.caption || '');
       return jsonOut({ ok: true });
     }
     return jsonOut({ ok: false, error: 'unknown action' });
@@ -74,6 +96,9 @@ function doGet(e) {
   }
   if (action === 'settings') {
     return jsonOut(readSettingsFromSheet());
+  }
+  if (action === 'photos') {
+    return jsonOut(readPhotosFromSheet());
   }
   return jsonOut({ ok: false, error: 'unknown action' });
 }
@@ -295,6 +320,135 @@ function jsonOut(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ---------------- Drive-hosted photos ---------------- */
+
+/** Get or create the Drive folder where uploaded photos go.
+   Resolution order:
+     1. PHOTO_FOLDER_ID const at the top of this file
+     2. PHOTO_FOLDER_ID stored in Script Properties (set automatically once we create one)
+     3. Auto-create a new folder named PHOTO_FOLDER_NAME and remember its ID
+*/
+function getOrCreatePhotoFolder() {
+  const props = PropertiesService.getScriptProperties();
+  const id = PHOTO_FOLDER_ID || props.getProperty('PHOTO_FOLDER_ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* fall through to create */ }
+  }
+  const folder = DriveApp.createFolder(PHOTO_FOLDER_NAME);
+  folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  props.setProperty('PHOTO_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/** Decode a data: URI and create a Drive file. Returns { fileId, url }. */
+function uploadPhotoToDrive(dataUri, filename) {
+  const m = String(dataUri || '').match(/^data:([^;]+);base64,([\s\S]+)$/);
+  if (!m) throw new Error('not a data URI');
+  const contentType = m[1];
+  const bytes = Utilities.base64Decode(m[2]);
+  const blob = Utilities.newBlob(bytes, contentType, filename || 'photo.jpg');
+  const folder = getOrCreatePhotoFolder();
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const fileId = file.getId();
+  // Stable image-embed URL that returns the bytes directly (not a download warning page).
+  const url = 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1600';
+  return { fileId: fileId, url: url };
+}
+
+function addPhotoToSheet(code, fileId, url, caption) {
+  const sheet = ensureSheet(SHEET_PHOTOS, HEADER_PHOTOS);
+  // Determine the next 'order' for this code
+  const last = sheet.getLastRow();
+  let nextOrder = 0;
+  if (last >= 2) {
+    const rows = sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const iCode = header.indexOf('code');
+    const iOrder = header.indexOf('order');
+    rows.forEach(function (row) {
+      if (String(row[iCode] || '').trim() === code) {
+        const o = Number(row[iOrder]) || 0;
+        if (o >= nextOrder) nextOrder = o + 1;
+      }
+    });
+  }
+  appendKeyedRow(sheet, {
+    code: code,
+    fileId: fileId,
+    url: url,
+    caption: caption || '',
+    order: nextOrder,
+    uploadedAt: new Date().toISOString()
+  });
+}
+
+function removePhotoFromSheet(fileId) {
+  const sheet = ensureSheet(SHEET_PHOTOS, HEADER_PHOTOS);
+  const last = sheet.getLastRow();
+  if (last < 2) return false;
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const iFid = header.indexOf('fileId');
+  const rows = sheet.getRange(2, iFid + 1, last - 1, 1).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][0]) === fileId) {
+      sheet.deleteRow(i + 2);
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateCaptionInSheet(fileId, caption) {
+  const sheet = ensureSheet(SHEET_PHOTOS, HEADER_PHOTOS);
+  const last = sheet.getLastRow();
+  if (last < 2) return false;
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const iFid = header.indexOf('fileId');
+  const iCap = header.indexOf('caption');
+  const rows = sheet.getRange(2, iFid + 1, last - 1, 1).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === fileId) {
+      sheet.getRange(i + 2, iCap + 1).setValue(caption || '');
+      return true;
+    }
+  }
+  return false;
+}
+
+function readPhotosFromSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_PHOTOS);
+  if (!sheet) return { photos: {}, photoCaptions: {}, photoFileIds: {} };
+  const last = sheet.getLastRow();
+  if (last < 2) return { photos: {}, photoCaptions: {}, photoFileIds: {} };
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const iCode    = header.indexOf('code');
+  const iFileId  = header.indexOf('fileId');
+  const iUrl     = header.indexOf('url');
+  const iCaption = header.indexOf('caption');
+  const iOrder   = header.indexOf('order');
+  const rows = sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+  rows.sort(function (a, b) { return (Number(a[iOrder]) || 0) - (Number(b[iOrder]) || 0); });
+  const photos = {};
+  const captions = {};
+  const fileIds = {};
+  rows.forEach(function (row) {
+    const code = String(row[iCode] || '').trim();
+    const url = String(row[iUrl] || '').trim();
+    const cap = String(row[iCaption] || '').trim();
+    const fid = String(row[iFileId] || '').trim();
+    if (!code || !url) return;
+    if (!photos[code])   photos[code] = [];
+    if (!captions[code]) captions[code] = [];
+    if (!fileIds[code])  fileIds[code] = [];
+    photos[code].push(url);
+    captions[code].push(cap);
+    fileIds[code].push(fid);
+  });
+  return { photos: photos, photoCaptions: captions, photoFileIds: fileIds };
 }
 
 /* ---------------- testing ---------------- */

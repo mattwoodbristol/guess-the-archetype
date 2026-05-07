@@ -11,7 +11,8 @@
   const LS = {
     data:     'ter_admin_data_v1',
     photos:   'ter_admin_photos_v1',
-    captions: 'ter_admin_captions_v1'
+    captions: 'ter_admin_captions_v1',
+    fileIds:  'ter_admin_photo_fileids_v1'   // parallel array per code: Drive fileIds
   };
 
   function $(s, r) { return (r || document).querySelector(s); }
@@ -70,10 +71,35 @@
     data: null,
     photos: null,
     captions: null,
+    fileIds: null,        // { code: [fileId, fileId, ...] } parallel to photos[]
     filter: 'all',
     search: '',
     selectedCode: null
   };
+
+  /* ---------- backend helpers ---------- */
+  async function backendPost(payload) {
+    if (!CFG.APPS_SCRIPT_URL) throw new Error('APPS_SCRIPT_URL not configured');
+    const res = await fetch(CFG.APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ password: CFG.ADMIN_PASSWORD }, payload))
+    });
+    return await res.json();
+  }
+  async function backendUploadPhoto(code, dataUri, filename, caption) {
+    return backendPost({ action: 'uploadPhoto', code, dataUri, filename, caption: caption || '' });
+  }
+  async function backendDeletePhoto(fileId) {
+    if (!fileId) return { ok: true };
+    return backendPost({ action: 'deletePhoto', fileId });
+  }
+  async function backendUpdateCaption(fileId, caption) {
+    if (!fileId) return { ok: false };
+    return backendPost({ action: 'updateCaption', fileId, caption: caption || '' });
+  }
+  function isDataUri(s) { return typeof s === 'string' && s.indexOf('data:') === 0; }
 
   function defaultSettings() {
     const easyDefaults = { totalCards: 15, traditionalCount: 3, mcqOptions: 3, distractorScope: 'sameClass', showHint: true };
@@ -120,6 +146,7 @@
   async function initData() {
     state.photos = load(LS.photos, {});
     state.captions = load(LS.captions, {});
+    state.fileIds = load(LS.fileIds, {});
     const existing = load(LS.data, null);
     if (existing && existing.nonStandard) {
       // Strip any photo blobs that previous admin builds may have stored here.
@@ -149,6 +176,26 @@
       }
     } catch (e) { /* fall through to local defaults */ }
 
+    // Pull live photos from Apps Script — these are Drive-hosted URLs. Live photos win
+    // over locally-cached copies so what admin sees == what players see.
+    try {
+      if (CFG.APPS_SCRIPT_URL) {
+        const res = await fetch(CFG.APPS_SCRIPT_URL + '?action=photos&t=' + Date.now());
+        const live = await res.json();
+        if (live && live.photos) {
+          // Replace each code's array with the backend version.
+          Object.keys(live.photos).forEach(code => {
+            state.photos[code] = (live.photos[code] || []).slice();
+            state.captions[code] = (live.photoCaptions && live.photoCaptions[code]) || [];
+            state.fileIds[code] = (live.photoFileIds && live.photoFileIds[code]) || [];
+          });
+          save(LS.photos, state.photos);
+          save(LS.captions, state.captions);
+          save(LS.fileIds, state.fileIds);
+        }
+      }
+    } catch (e) { /* fall through */ }
+
     // Auto-load photos + captions from types.json into memory if localStorage was empty.
     // We do NOT persist the bulk photos to localStorage here — they're already in types.json
     // and most browsers cap localStorage at 5–10 MB which Beck's photos can exceed.
@@ -174,8 +221,10 @@
           });
         });
         if (Object.keys(mergedPhotos).length > 0) state.photos = mergedPhotos;
-        if (Object.keys(mergedCaps).length > 0) state.captions = mergedCaps;
-        // Captions are tiny — try to persist them (best-effort).
+        // Merge — user-edited captions in localStorage win over anything in types.json.
+        if (Object.keys(mergedCaps).length > 0) {
+          state.captions = Object.assign({}, mergedCaps, state.captions);
+        }
         save(LS.captions, state.captions);
       } catch (e) { /* silent */ }
     }
@@ -198,8 +247,11 @@
     $('#btn-reset').addEventListener('click', resetToShipped);
     $('#e-photo-file').addEventListener('change', onPhotoUpload);
     $('#btn-save-settings').addEventListener('click', saveSettings);
+    const migBtn = $('#btn-migrate');
+    if (migBtn) migBtn.addEventListener('click', migratePhotosToDrive);
 
     fillSettingsForm();
+    refreshMigrationPanel();
   }
 
   /* ==========================================================
@@ -269,6 +321,74 @@
   function setSettingsStatus(msg) {
     const el = $('#settings-status');
     if (el) el.textContent = msg;
+  }
+  function setMigrationStatus(msg) {
+    const el = $('#migrate-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  /* ---------- migration: base64 photos -> Drive ---------- */
+  function countLegacyPhotos() {
+    let n = 0;
+    Object.keys(state.photos || {}).forEach(code => {
+      (state.photos[code] || []).forEach(p => { if (isDataUri(p)) n++; });
+    });
+    return n;
+  }
+  function refreshMigrationPanel() {
+    const panel = $('#migrate-panel');
+    if (!panel) return;
+    const n = countLegacyPhotos();
+    if (n > 0) {
+      panel.hidden = false;
+      $('#migrate-count').textContent = String(n);
+    } else {
+      panel.hidden = true;
+    }
+  }
+  async function migratePhotosToDrive() {
+    if (!CFG.APPS_SCRIPT_URL) { toast('Backend URL not configured.'); return; }
+    const todo = [];
+    Object.keys(state.photos || {}).forEach(code => {
+      (state.photos[code] || []).forEach((p, i) => {
+        if (isDataUri(p)) todo.push({ code, idx: i, dataUri: p });
+      });
+    });
+    if (!todo.length) { toast('Nothing to migrate.'); return; }
+    if (!confirm('Upload ' + todo.length + ' photos to your Drive folder? This may take a minute or two.')) return;
+
+    setMigrationStatus('Migrating 0 / ' + todo.length + '…');
+    let ok = 0;
+    for (let i = 0; i < todo.length; i++) {
+      setMigrationStatus('Migrating ' + (i + 1) + ' / ' + todo.length + '…');
+      const item = todo[i];
+      try {
+        const filename = item.code + '_' + item.idx + '.jpg';
+        const captionExisting = ((state.captions[item.code] || [])[item.idx]) || '';
+        const result = await backendUploadPhoto(item.code, item.dataUri, filename, captionExisting);
+        if (result && result.ok && result.url) {
+          state.photos[item.code][item.idx] = result.url;
+          if (!state.fileIds[item.code]) state.fileIds[item.code] = [];
+          state.fileIds[item.code][item.idx] = result.fileId;
+          ok++;
+        }
+      } catch (e) {
+        console.warn('Migration error for ' + item.code + '#' + item.idx, e);
+      }
+      // tiny throttle to be polite to the Apps Script + Drive
+      await new Promise(r => setTimeout(r, 250));
+    }
+    save(LS.photos, state.photos);
+    save(LS.fileIds, state.fileIds);
+    setMigrationStatus(ok + ' / ' + todo.length + ' migrated.');
+    refreshMigrationPanel();
+    renderPhotos();
+    renderList();
+    if (ok === todo.length) {
+      toast('All photos migrated. Export types.json and push so visitors stop loading the old base64 blob.');
+    } else {
+      toast('Some uploads failed — see console. You can run migration again.');
+    }
   }
 
   /* ==========================================================
@@ -374,15 +494,43 @@
         placeholder: 'Photo credit / caption',
         value: captions[i] || ''
       });
-      captionInput.addEventListener('input', () => {
-        const arr = state.captions[code] || [];
-        arr[i] = captionInput.value.trim();
+      // Set .value via DOM property too, just in case the attribute path is unreliable
+      captionInput.value = captions[i] || '';
+
+      const tick = el('span', { class: 'caption-saved' }, '✓');
+
+      const persistThis = () => {
+        const arr = state.captions[code] ? state.captions[code].slice() : [];
+        while (arr.length < i) arr.push('');
+        const newVal = captionInput.value.trim();
+        const changed = arr[i] !== newVal;
+        arr[i] = newVal;
         state.captions[code] = arr;
         save(LS.captions, state.captions);
-      });
+        // flash the tick (locally saved)
+        tick.classList.add('show');
+        clearTimeout(captionInput._t);
+        captionInput._t = setTimeout(() => tick.classList.remove('show'), 1200);
+
+        // Push the change to the backend (debounced) if this photo is Drive-hosted.
+        const fileId = (state.fileIds[code] || [])[i];
+        if (changed && fileId && CFG.APPS_SCRIPT_URL) {
+          clearTimeout(captionInput._netT);
+          captionInput._netT = setTimeout(() => {
+            backendUpdateCaption(fileId, newVal).catch(err => {
+              console.warn('Caption sync failed', err);
+            });
+          }, 500);
+        }
+      };
+      captionInput.addEventListener('input',  persistThis);
+      captionInput.addEventListener('change', persistThis);
+      captionInput.addEventListener('blur',   persistThis);
+
       const ph = el('div', { class: 'ph' }, [
         el('img', { src, alt: 'photo ' + (i + 1) }),
         captionInput,
+        tick,
         el('button', { type: 'button', title: 'Delete photo', onclick: () => removePhoto(code, i) }, '×')
       ]);
       mount.appendChild(ph);
@@ -488,37 +636,64 @@
   }
 
   /* ==========================================================
-     Photos + captions
+     Photos + captions — Drive-hosted via Apps Script
      ========================================================== */
-  function onPhotoUpload(e) {
+  async function onPhotoUpload(e) {
     const code = state.selectedCode;
     if (!code) return;
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (!files.length) return;
+    if (!CFG.APPS_SCRIPT_URL) {
+      toast('Backend URL not configured — cannot upload.');
+      return;
+    }
 
-    Promise.all(files.map(fileToDataUri)).then(uris => {
-      state.photos[code] = (state.photos[code] || []).concat(uris);
-      // Add empty caption slots so the per-photo input lines up
-      state.captions[code] = (state.captions[code] || []).concat(uris.map(() => ''));
-      save(LS.photos, state.photos);
-      save(LS.captions, state.captions);
-      renderPhotos();
-      renderList();
-      toast(`Added ${uris.length} photo${uris.length > 1 ? 's' : ''}. Add a credit to each.`);
-    }).catch(err => {
-      console.error(err);
-      toast('Photo upload failed.');
-    });
+    setMigrationStatus('');
+    let okCount = 0;
+    for (let i = 0; i < files.length; i++) {
+      toast('Uploading ' + (i + 1) + '/' + files.length + '…');
+      try {
+        const dataUri = await fileToDataUri(files[i]);
+        const result = await backendUploadPhoto(code, dataUri, files[i].name, '');
+        if (result && result.ok && result.url) {
+          state.photos[code]   = (state.photos[code] || []).concat(result.url);
+          state.captions[code] = (state.captions[code] || []).concat('');
+          state.fileIds[code]  = (state.fileIds[code] || []).concat(result.fileId);
+          save(LS.photos, state.photos);
+          save(LS.captions, state.captions);
+          save(LS.fileIds, state.fileIds);
+          okCount++;
+          renderPhotos();
+          renderList();
+        } else {
+          console.warn('Upload returned non-ok', result);
+        }
+      } catch (err) {
+        console.error('Upload failed for ' + files[i].name, err);
+      }
+    }
+    toast(okCount + '/' + files.length + ' uploaded to Drive.');
   }
 
-  function removePhoto(code, idx) {
+  async function removePhoto(code, idx) {
+    const fileId = (state.fileIds[code] || [])[idx];
+
+    // Optimistic local removal so the UI is instant
     (state.photos[code] || []).splice(idx, 1);
     if (state.captions[code]) state.captions[code].splice(idx, 1);
+    if (state.fileIds[code]) state.fileIds[code].splice(idx, 1);
     save(LS.photos, state.photos);
     save(LS.captions, state.captions);
+    save(LS.fileIds, state.fileIds);
     renderPhotos();
     renderList();
+
+    // Best-effort backend cleanup
+    if (fileId && CFG.APPS_SCRIPT_URL) {
+      try { await backendDeletePhoto(fileId); }
+      catch (e) { console.warn('Backend delete failed', e); }
+    }
   }
 
   function fileToDataUri(file) {
@@ -552,8 +727,15 @@
      ========================================================== */
   function exportJson() {
     const payload = JSON.parse(JSON.stringify(state.data));
-    payload.photos = state.photos;
-    payload.photoCaptions = state.captions;
+    // Only embed photos that aren't on Drive (i.e. legacy base64). Drive-hosted
+    // photos live on the backend Photos sheet — players GET them at runtime.
+    const legacyPhotos = {};
+    Object.keys(state.photos || {}).forEach(code => {
+      const arr = (state.photos[code] || []).filter(isDataUri);
+      if (arr.length) legacyPhotos[code] = arr;
+    });
+    if (Object.keys(legacyPhotos).length) payload.photos = legacyPhotos;
+    payload.photoCaptions = state.captions;  // captions stay portable; backend is also source of truth
     payload.exportedAt = new Date().toISOString();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

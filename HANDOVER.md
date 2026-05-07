@@ -2,7 +2,7 @@
 
 Hi Beck — these notes catch you up on the Transform‑ER "Guess the Archetype" game. The build runs end‑to‑end. Pick up wherever it's most useful.
 
-Last updated: 2026‑05‑06 (v2.1).
+Last updated: 2026‑05‑06 (v2.2).
 
 ## 1. What this is
 
@@ -13,12 +13,13 @@ A round is **N flashcards** (configurable per‑difficulty in admin — Easy and
 - **Non‑traditional MCQ cards** — show a BRE system‑built archetype, player picks the name from a list. The number of options and how distractors are chosen depends on the **difficulty mode** (Easy / Hard) the player chose at the start.
 - **Traditional cards** — interspersed at roughly even positions. They ask whether the player has the archetype in their portfolio, count, bespoke local name, and locations. They're skippable. **This portfolio data is the real point of the exercise.**
 - **Post‑MCQ portfolio prompt** — after the player answers a non‑traditional MCQ, a "Do you have any of these in your portfolio?" panel appears below the reveal. Yes branches to count + locations; no/not‑sure are recorded as well. So *every* card is a portfolio data‑capture opportunity, not just the traditional ones.
+- **Disagree? prompt** — alongside the portfolio prompt on non‑traditional cards, a wheat‑tinted text box invites the player to suggest what they think the archetype should be called. Captured separately and written to a `Disagreements` tab.
 
 After the round: score + leaderboard with EASY/HARD pills, plus a Play again button.
 
 ## 2. Architecture in one paragraph
 
-Static SPA (HTML/CSS/JS, no build step) on the front end. Backend is a Google Apps Script Web App bound to a Google Sheet (`T‑ER Archetypes Game`). The page POSTs JSON to the Apps Script on round completion; the script appends rows to four tabs (`Submissions` — private, contact details; `Portfolio` — one row per portfolio answer of either kind; `Leaderboard` — name+org+score+difficulty, public; `Settings` — single JSON blob with the live game configuration). The page also GETs the leaderboard and the live settings from the same script. There is no public auth on the backend; the *saveSettings* endpoint is gated by a shared password that lives in both `config.js` and `Code.gs`.
+Static SPA (HTML/CSS/JS, no build step) on the front end. Backend is a Google Apps Script Web App bound to a Google Sheet (`T‑ER Archetypes Game`). The page POSTs JSON to the Apps Script on round completion; the script appends rows to five tabs (`Submissions` — private, contact details; `Portfolio` — one row per portfolio answer of either kind; `Leaderboard` — name+org+score+difficulty, public; `Settings` — single JSON blob with the live game configuration; `Disagreements` — one row per "I think this type is actually X" suggestion). The page also GETs the leaderboard and the live settings from the same script. There is no public auth on the backend; the *saveSettings* endpoint is gated by a shared password that lives in both `config.js` and `Code.gs`.
 
 ## 3. File map
 
@@ -94,22 +95,27 @@ Three sections:
 
 ## 6. Backend (Apps Script)
 
-Bound to Sheet **`T‑ER Archetypes Game`**. Four tabs (created on first write):
+Bound to Sheet **`T‑ER Archetypes Game`**. Five tabs (created on first write):
 
-| Sheet | Columns (v2.1) | Sensitivity |
+| Sheet | Columns (v2.2) | Sensitivity |
 |---|---|---|
 | `Submissions` | playedAt, name, org, role, orgLocation, email, phone, **difficulty**, score, total, durationMs, answersJson, version | **Private** |
 | `Portfolio` | playedAt, org, orgLocation, contactEmail, **kind**, archetypeCode, archetypeName, has, count, bespokeName, propertyLocations, **skipped** | Internal — main analytic output |
 | `Leaderboard` | playedAt, name, org, **difficulty**, score, total | Public via GET |
 | `Settings` | key / value (rows: `settings` → JSON blob; `updatedAt` → timestamp) | Backend‑managed |
+| `Disagreements` | playedAt, name, org, orgLocation, contactEmail, archetypeCode, officialName, suggestedName | Internal |
 
-Bold = added in v2. `Settings` was added in v2.1.
+Bold = added in v2. `Settings` was added in v2.1, `Disagreements` in v2.2.
+
+`ensureSheet` performs a header upgrade by **set difference**: any column in the desired header that isn't in the live header gets appended at the end. Existing rows stay put. Writers (`appendKeyedRow`) then map values to columns *by name*, so a v1 sheet missing `difficulty` will get the column added on first POST after redeploy and start populating it on subsequent rows.
+
+Note: the v2.0 deployment had a bug in this logic (it sliced `header.slice(existingCols)` instead of doing a set diff), so any v1 sheet that received POSTs between the v2.0 and v2.2 deployments may have a duplicate `total` column on Leaderboard or duplicate `version` column on Submissions. Delete those manually if you spot them — the v2.2 logic doesn't compound the issue.
 
 `kind` on Portfolio is `'trad'` or `'nonStd'` so you can analyse non‑traditional portfolio answers (from the post‑MCQ prompt) separately from the traditional cards.
 
 Endpoints:
 
-- `POST /` with `{action: 'submit', ...}` → records a play.
+- `POST /` with `{action: 'submit', ...}` → records a play (Submissions + Portfolio + Leaderboard + Disagreements as applicable).
 - `POST /` with `{action: 'saveSettings', password, settings}` → writes the JSON blob to the Settings tab. Password must match `ADMIN_PASSWORD` at the top of `Code.gs` (which itself must match `CFG.ADMIN_PASSWORD` in `config.js`).
 - `GET /?action=leaderboard&n=10` → `[{name, org, score, total, difficulty, playedAt}, ...]`
 - `GET /?action=settings` → live settings JSON (or `null` if the Settings tab is empty).
@@ -199,8 +205,17 @@ These came in as a feedback batch from Matt and shipped on 2026‑05‑06:
 - ✅ Settings save direct to the Sheet via Apps Script — no Git push or types.json export needed for settings changes.
 - ✅ totalCards / traditionalCount moved into each difficulty profile so Hard can be longer than Easy.
 
+**v2.2 (same day) polish:**
+
+- ✅ Fixed `ensureSheet` header upgrade — was appending duplicate columns instead of inserting missing named columns, which is why difficulty wasn't being recorded on Leaderboard.
+- ✅ Top‑left logo wraps to a homepage link on all three pages (`brand-link` class).
+- ✅ End‑screen leaderboard now has a "View full board →" link mirroring the intro.
+- ✅ "Disagree?" prompt on non‑traditional cards — wheat‑tinted text input alongside the portfolio prompt; suggestions land in a new `Disagreements` Sheet tab.
+- ✅ localStorage quota fix — `state.data` is stripped of photo blobs on load so admin saves don't blow the 5–10 MB browser quota; quota errors are now silent (admin's in‑memory state still works and exports correctly).
+
 ## 12. Possible future work
 
+- **Update admin "Data" section copy** — the existing prose says "Admin edits live in this browser's local storage" / "Export a JSON snapshot to bake it into the deployed app". Since v2.1 that's only true for types and photos; settings now save direct to the Sheet. Reword to make the split explicit. *(Logged as task #22.)*
 - **Replace difficulty's "showHint"** — currently just toggles the construction class label on the photo tag. Could expand to e.g. show period or build count as additional hints in Easy mode.
 - **Surface alt_names** — pull the 5,556 alias rows from the BRE Alternative names sheet, store as `alt_names[]` per code, show on the reveal screen ("Also known as: …"), let admin search match aliases. Pulled from backlog before v2 to keep things simple.
 - **Street View image bulk fetch** — Matt may give a dataset of known non‑traditional property addresses; we'd run them through the Google Street View Static API (~$7 / 1,000 images, requires GCP key + billing). Mapillary as a free fallback. *Don't run without explicit go-ahead — touches Matt's GCP billing.*

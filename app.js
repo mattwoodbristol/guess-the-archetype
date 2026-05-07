@@ -148,10 +148,26 @@
      ========================================================== */
   async function loadTypes() {
     const local = loadJSON(LS.adminData, null);
-    if (local && local.nonStandard) return normalisePhotos(local);
-    const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
-    if (!res.ok) throw new Error('Could not load types.json (' + res.status + ')');
-    return normalisePhotos(await res.json());
+    let data;
+    if (local && local.nonStandard) {
+      data = local;
+    } else {
+      const res = await fetch('types.json?v=' + encodeURIComponent(CFG.DATA_VERSION), { cache: 'no-store' });
+      if (!res.ok) throw new Error('Could not load types.json (' + res.status + ')');
+      data = await res.json();
+    }
+    // Live-fetch Drive-hosted photos from backend; merged onto types.json (live wins).
+    if (CFG.APPS_SCRIPT_URL) {
+      try {
+        const res = await fetch(CFG.APPS_SCRIPT_URL + '?action=photos&t=' + Date.now());
+        const live = await res.json();
+        if (live && live.photos) {
+          data.photos = Object.assign({}, data.photos || {}, live.photos);
+          data.photoCaptions = Object.assign({}, data.photoCaptions || {}, live.photoCaptions || {});
+        }
+      } catch (e) { /* fall back to whatever's in types.json */ }
+    }
+    return normalisePhotos(data);
   }
 
   function normalisePhotos(data) {

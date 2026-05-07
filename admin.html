@@ -179,6 +179,18 @@
       </div>
     </section>
 
+    <section class="admin-panel" style="margin-top:24px;" id="migrate-panel" hidden>
+      <h3>Migrate photos to Drive</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:-4px;">
+        <span id="migrate-count">0</span> photos in this admin browser are still stored as base64 images.
+        Click below to upload them all to your Drive photos folder so they go live for everyone without an export/push.
+      </p>
+      <div class="admin-bar">
+        <span id="migrate-status" class="counter" style="color:var(--muted);"></span>
+        <button class="btn blue" id="btn-migrate">Migrate to Drive</button>
+      </div>
+    </section>
+
     <section class="admin-panel" style="margin-top:24px;">
       <h3>Data</h3>
       <p style="color:var(--muted);font-size:13px;margin-top:-4px;">
