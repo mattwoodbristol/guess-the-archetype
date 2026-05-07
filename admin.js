@@ -513,7 +513,7 @@
   function classFullFor(cls) {
     return {
       MET: 'Metal Frame', PCC: 'Precast Concrete', ISC: 'In-Situ Concrete',
-      TIM: 'Timber Frame', TRAD: 'Traditional'
+      TIM: 'Timber Frame', TRAD: 'Traditional', OTH: 'Other'
     }[cls] || cls || '—';
   }
 
