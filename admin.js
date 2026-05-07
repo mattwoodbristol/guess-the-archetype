@@ -117,6 +117,15 @@
     if (!fileId) return { ok: false };
     return backendPost({ action: 'updateCaption', fileId, caption: caption || '' });
   }
+  async function backendSaveType(type, bucket) {
+    return backendPost({ action: 'saveType', type, bucket });
+  }
+  async function backendDeleteType(code) {
+    return backendPost({ action: 'deleteType', code });
+  }
+  async function backendSaveTypesBulk(types) {
+    return backendPost({ action: 'saveTypesBulk', types });
+  }
   function isDataUri(s) { return typeof s === 'string' && s.indexOf('data:') === 0; }
 
   function defaultSettings() {
@@ -183,16 +192,29 @@
       }
     }
     state.data.settings = state.data.settings || defaultSettings();
-    // Pull live settings from Apps Script (overrides types.json), so the admin form reflects what's actually live.
+
+    // Pull live settings from Apps Script.
     try {
       if (CFG.APPS_SCRIPT_URL) {
         const res = await fetch(CFG.APPS_SCRIPT_URL + '?action=settings&t=' + Date.now());
         const remote = await res.json();
-        if (remote && remote.difficulty) {
-          state.data.settings.difficulty = remote.difficulty;
-        }
+        if (remote && remote.difficulty) state.data.settings.difficulty = remote.difficulty;
       }
     } catch (e) { /* fall through to local defaults */ }
+
+    // Pull live types from Apps Script. Backend wins over local types when present.
+    try {
+      if (CFG.APPS_SCRIPT_URL) {
+        const res = await fetch(CFG.APPS_SCRIPT_URL + '?action=types&t=' + Date.now());
+        const liveTypes = await res.json();
+        if (liveTypes && (Array.isArray(liveTypes.nonStandard) || Array.isArray(liveTypes.traditional))) {
+          // Use backend version verbatim.
+          state.data.nonStandard = liveTypes.nonStandard || [];
+          state.data.traditional = liveTypes.traditional || [];
+          persistData();
+        }
+      }
+    } catch (e) { /* fall through to local types */ }
 
     // Pull live photos from Apps Script — these are Drive-hosted URLs. Live photos win
     // over locally-cached copies so what admin sees == what players see.
@@ -267,6 +289,8 @@
     $('#btn-save-settings').addEventListener('click', saveSettings);
     const migBtn = $('#btn-migrate');
     if (migBtn) migBtn.addEventListener('click', migratePhotosToDrive);
+    const syncBtn = $('#btn-sync-types');
+    if (syncBtn) syncBtn.addEventListener('click', syncTypesToBackend);
 
     fillSettingsForm();
     refreshMigrationPanel();
@@ -343,6 +367,22 @@
   function setMigrationStatus(msg) {
     const el = $('#migrate-status');
     if (el) el.textContent = msg || '';
+  }
+
+  /* ---------- sync types to backend ---------- */
+  async function syncTypesToBackend() {
+    if (!CFG.APPS_SCRIPT_URL) { toast('Backend URL not configured.'); return; }
+    const total = (state.data.nonStandard || []).length + (state.data.traditional || []).length;
+    if (!confirm('Push all ' + total + ' types to the server? Existing server-side types will be replaced with this list.')) return;
+    try {
+      await backendSaveTypesBulk({
+        nonStandard: state.data.nonStandard || [],
+        traditional: state.data.traditional || []
+      });
+      toast('Synced ' + total + ' types to the server. Players see them on next reload.');
+    } catch (e) {
+      toast('Sync failed: ' + e.message);
+    }
   }
 
   /* ---------- migration: base64 photos -> Drive ---------- */
@@ -570,7 +610,7 @@
   /* ==========================================================
      CRUD
      ========================================================== */
-  function newType(bucket) {
+  async function newType(bucket) {
     const code = bucket === 'traditional'
       ? 'TRAD-' + Math.random().toString(36).slice(2, 6).toUpperCase()
       : 'NEW-' + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -591,13 +631,20 @@
     state.selectedCode = code;
     renderList();
     selectType(code);
+
+    // Sync to backend so the type appears for the game on next reload.
+    if (CFG.APPS_SCRIPT_URL) {
+      try { await backendSaveType(t, bucket); }
+      catch (e) { toast('New type saved locally — couldn\'t reach server: ' + e.message); }
+    }
   }
 
-  function saveCurrent() {
+  async function saveCurrent() {
     if (!state.selectedCode) return;
     const found = findType(state.selectedCode);
     if (!found) return;
     const t = found.t;
+    const oldCode = t.code;
     const newCode = $('#e-code').value.trim();
     const cls = $('#e-class').value;
     const targetBucket = cls === 'TRAD' ? 'traditional' : 'nonStandard';
@@ -634,27 +681,47 @@
     persistData();
     renderList();
     selectType(state.selectedCode);
-    toast('Saved.');
+
+    // Sync to backend
+    let synced = true;
+    if (CFG.APPS_SCRIPT_URL) {
+      try {
+        // If the code changed, delete the old row first so we don't leave a stale record.
+        if (oldCode && oldCode !== t.code) await backendDeleteType(oldCode);
+        await backendSaveType(t, targetBucket);
+      } catch (e) {
+        synced = false;
+        toast('Saved locally — server didn\'t accept the change: ' + e.message);
+      }
+    }
+    if (synced) toast('Saved.');
   }
 
-  function deleteCurrent() {
+  async function deleteCurrent() {
     if (!state.selectedCode) return;
-    if (!confirm('Delete this type? This cannot be undone in this browser (but your last export still has it).')) return;
+    if (!confirm('Delete this type? This cannot be undone.')) return;
     const found = findType(state.selectedCode);
     if (!found) return;
-    state.data[found.bucket] = state.data[found.bucket].filter(x => x.code !== state.selectedCode);
-    if (state.photos[state.selectedCode]) {
-      delete state.photos[state.selectedCode];
+    const code = state.selectedCode;
+    state.data[found.bucket] = state.data[found.bucket].filter(x => x.code !== code);
+    if (state.photos[code]) {
+      delete state.photos[code];
       savePhotosLocal();
     }
-    if (state.captions[state.selectedCode]) {
-      delete state.captions[state.selectedCode];
+    if (state.captions[code]) {
+      delete state.captions[code];
       save(LS.captions, state.captions);
     }
     persistData();
     clearEditor();
     renderList();
-    toast('Deleted.');
+
+    if (CFG.APPS_SCRIPT_URL) {
+      try { await backendDeleteType(code); toast('Deleted.'); }
+      catch (e) { toast('Deleted locally — server unreachable: ' + e.message); }
+    } else {
+      toast('Deleted.');
+    }
   }
 
   function persistData() {

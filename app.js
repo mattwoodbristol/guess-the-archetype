@@ -156,6 +156,20 @@
       if (!res.ok) throw new Error('Could not load types.json (' + res.status + ')');
       data = await res.json();
     }
+    // Live-fetch types from backend (Types sheet). Backend wins over types.json.
+    if (CFG.APPS_SCRIPT_URL) {
+      try {
+        const res = await fetch(CFG.APPS_SCRIPT_URL + '?action=types&t=' + Date.now());
+        const liveTypes = await res.json();
+        if (liveTypes && (Array.isArray(liveTypes.nonStandard) || Array.isArray(liveTypes.traditional))) {
+          if ((liveTypes.nonStandard || []).length || (liveTypes.traditional || []).length) {
+            data.nonStandard = liveTypes.nonStandard || [];
+            data.traditional = liveTypes.traditional || [];
+          }
+        }
+      } catch (e) { /* fall back to types.json */ }
+    }
+
     // Live-fetch Drive-hosted photos from backend; merged onto types.json (live wins).
     if (CFG.APPS_SCRIPT_URL) {
       try {

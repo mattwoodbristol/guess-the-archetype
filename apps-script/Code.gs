@@ -20,6 +20,7 @@ const SHEET_LEADERBOARD   = 'Leaderboard';
 const SHEET_SETTINGS      = 'Settings';
 const SHEET_DISAGREEMENTS = 'Disagreements';
 const SHEET_PHOTOS        = 'Photos';
+const SHEET_TYPES         = 'Types';
 const PHOTO_FOLDER_NAME   = 'Guess the Archetype photos';
 // Pre-configured Drive folder for photo uploads. Leave blank ('') to auto-create
 // a folder in the deploying user's Drive on first upload — that's the simplest
@@ -48,6 +49,11 @@ const HEADER_DISAGREEMENTS = [
 ];
 const HEADER_PHOTOS = [
   'code', 'fileId', 'url', 'caption', 'order', 'uploadedAt'
+];
+const HEADER_TYPES = [
+  'bucket', 'code', 'name', 'class', 'class_full', 'built',
+  'period_from', 'period_to', 'period_range', 'defective',
+  'description', 'updatedAt'
 ];
 
 /** Entry point for POST. */
@@ -83,6 +89,21 @@ function doPost(e) {
       updateCaptionInSheet(payload.fileId, payload.caption || '');
       return jsonOut({ ok: true });
     }
+    if (payload.action === 'saveType') {
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
+      upsertTypeInSheet(payload.type || {}, payload.bucket || 'nonStandard');
+      return jsonOut({ ok: true });
+    }
+    if (payload.action === 'deleteType') {
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
+      deleteTypeFromSheet(payload.code || '');
+      return jsonOut({ ok: true });
+    }
+    if (payload.action === 'saveTypesBulk') {
+      if (payload.password !== ADMIN_PASSWORD) return jsonOut({ ok: false, error: 'auth failed' });
+      bulkReplaceTypes(payload.types || { nonStandard: [], traditional: [] });
+      return jsonOut({ ok: true });
+    }
     return jsonOut({ ok: false, error: 'unknown action' });
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
@@ -101,6 +122,9 @@ function doGet(e) {
   }
   if (action === 'photos') {
     return jsonOut(readPhotosFromSheet());
+  }
+  if (action === 'types') {
+    return jsonOut(readTypesFromSheet());
   }
   return jsonOut({ ok: false, error: 'unknown action' });
 }
@@ -451,6 +475,122 @@ function readPhotosFromSheet() {
     fileIds[code].push(fid);
   });
   return { photos: photos, photoCaptions: captions, photoFileIds: fileIds };
+}
+
+/* ---------------- Types tab (live archetype catalog) ---------------- */
+
+function typeFieldsRow(bucket, type) {
+  return {
+    bucket:        bucket || 'nonStandard',
+    code:          String(type.code || '').trim(),
+    name:          String(type.name || '').trim(),
+    'class':       String(type['class'] || '').trim(),
+    class_full:    String(type.class_full || '').trim(),
+    built:         (type.built === '' || type.built == null) ? '' : Number(type.built),
+    period_from:   (type.period_from === '' || type.period_from == null) ? '' : Number(type.period_from),
+    period_to:     (type.period_to === '' || type.period_to == null) ? '' : Number(type.period_to),
+    period_range:  String(type.period_range || '').trim(),
+    defective:     type.defective ? 'true' : 'false',
+    description:   String(type.description || '').trim(),
+    updatedAt:     new Date().toISOString()
+  };
+}
+
+function findTypeRow(sheet, code) {
+  const last = sheet.getLastRow();
+  if (last < 2) return -1;
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const iCode = header.indexOf('code');
+  if (iCode < 0) return -1;
+  const codes = sheet.getRange(2, iCode + 1, last - 1, 1).getValues();
+  for (var i = 0; i < codes.length; i++) {
+    if (String(codes[i][0]).trim() === String(code).trim()) return i + 2; // 1-based row, header is row 1
+  }
+  return -1;
+}
+
+function upsertTypeInSheet(type, bucket) {
+  if (!type.code) return;
+  const sheet = ensureSheet(SHEET_TYPES, HEADER_TYPES);
+  const fields = typeFieldsRow(bucket, type);
+  const existingRow = findTypeRow(sheet, type.code);
+  if (existingRow > 0) {
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const row = header.map(function (col) {
+      return Object.prototype.hasOwnProperty.call(fields, col) ? fields[col] : '';
+    });
+    sheet.getRange(existingRow, 1, 1, header.length).setValues([row]);
+  } else {
+    appendKeyedRow(sheet, fields);
+  }
+}
+
+function deleteTypeFromSheet(code) {
+  const sheet = ensureSheet(SHEET_TYPES, HEADER_TYPES);
+  const row = findTypeRow(sheet, code);
+  if (row > 0) sheet.deleteRow(row);
+}
+
+function bulkReplaceTypes(typesObj) {
+  const sheet = ensureSheet(SHEET_TYPES, HEADER_TYPES);
+  // Wipe all rows except the header
+  const last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).clearContent();
+  // Stage rows for both buckets
+  const fieldsList = [];
+  (typesObj.nonStandard || []).forEach(function (t) { fieldsList.push(typeFieldsRow('nonStandard', t)); });
+  (typesObj.traditional || []).forEach(function (t) { fieldsList.push(typeFieldsRow('traditional', t)); });
+  if (!fieldsList.length) return;
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const rows = fieldsList.map(function (fields) {
+    return header.map(function (col) {
+      return Object.prototype.hasOwnProperty.call(fields, col) ? fields[col] : '';
+    });
+  });
+  sheet.getRange(2, 1, rows.length, header.length).setValues(rows);
+}
+
+function readTypesFromSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_TYPES);
+  if (!sheet) return null;
+  const last = sheet.getLastRow();
+  if (last < 2) return null;
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idx = function (h) { return header.indexOf(h); };
+  const iBucket    = idx('bucket');
+  const iCode      = idx('code');
+  const iName      = idx('name');
+  const iClass     = idx('class');
+  const iClassFull = idx('class_full');
+  const iBuilt     = idx('built');
+  const iFrom      = idx('period_from');
+  const iTo        = idx('period_to');
+  const iRange     = idx('period_range');
+  const iDefective = idx('defective');
+  const iDesc      = idx('description');
+  const rows = sheet.getRange(2, 1, last - 1, header.length).getValues();
+  const out = { nonStandard: [], traditional: [] };
+  rows.forEach(function (row) {
+    const code = String(row[iCode] || '').trim();
+    if (!code) return;
+    const bucket = String(row[iBucket] || 'nonStandard').trim() || 'nonStandard';
+    const t = {
+      code: code,
+      name: String(row[iName] || '').trim(),
+      'class': String(row[iClass] || '').trim(),
+      class_full: String(row[iClassFull] || '').trim(),
+      built:        (row[iBuilt] === '' || row[iBuilt] == null) ? null : Number(row[iBuilt]),
+      period_from:  (row[iFrom]  === '' || row[iFrom]  == null) ? null : Number(row[iFrom]),
+      period_to:    (row[iTo]    === '' || row[iTo]    == null) ? null : Number(row[iTo]),
+      period_range: String(row[iRange] || '').trim(),
+      defective:    String(row[iDefective] || '').toLowerCase() === 'true',
+      description:  String(row[iDesc] || '').trim()
+    };
+    if (bucket === 'traditional') out.traditional.push(t);
+    else out.nonStandard.push(t);
+  });
+  return out;
 }
 
 /* ---------------- testing ---------------- */
