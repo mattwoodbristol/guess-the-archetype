@@ -29,10 +29,10 @@
 
     <div class="lb-table-wrap">
       <div class="lb-filter" id="lb-filter">
-        <button class="chip active" data-filter="all">Real plays</button>
+        <button class="chip active" data-filter="all">All players</button>
         <button class="chip" data-filter="easy">Easy only</button>
         <button class="chip" data-filter="hard">Hard only</button>
-        <button class="chip" data-filter="test">Test plays</button>
+        <button class="chip" data-filter="test" id="chip-test" style="display:none;">Test plays</button>
       </div>
       <div id="lb-mount">
         <div class="empty">Loading leaderboard…</div>
@@ -50,6 +50,7 @@
       const CFG = window.APP_CONFIG;
       let allRows = [];
       let filter = 'all';
+      let testEnabled = false;
 
       function $(s, r) { return (r || document).querySelector(s); }
       function $all(s, r) { return Array.from((r || document).querySelectorAll(s)); }
@@ -72,6 +73,9 @@
           mount.innerHTML = '<div class="empty">Backend URL not configured.</div>';
           return;
         }
+        // Fetch settings + leaderboard in parallel.
+        const settingsPromise = fetch(CFG.APPS_SCRIPT_URL + '?action=settings&t=' + Date.now())
+          .then(r => r.json()).catch(() => null);
         try {
           const url = CFG.APPS_SCRIPT_URL + '?action=leaderboard&n=' + (CFG.LEADERBOARD_FULL_ROWS || 100);
           const res = await fetch(url);
@@ -80,6 +84,13 @@
           mount.innerHTML = '<div class="empty">Couldn\'t reach the leaderboard. Try again later.</div>';
           return;
         }
+        const settings = await settingsPromise;
+        testEnabled = !!(settings && settings.testEnabled);
+        const chip = $('#chip-test');
+        if (chip) chip.style.display = testEnabled ? '' : 'none';
+        // Defensive: if filter was somehow 'test' but mode is off, snap back to 'all'.
+        if (!testEnabled && filter === 'test') filter = 'all';
+
         if (!allRows || !allRows.length) {
           mount.innerHTML = '<div class="empty">No scores recorded yet.</div>';
           return;
