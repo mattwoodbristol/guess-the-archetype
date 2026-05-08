@@ -35,6 +35,16 @@ window.APP_CONFIG = {
     }
   },
 
+  // Default values used when an admin runs a test play. Overridable in admin → Game settings.
+  TEST_PLAYER: {
+    name:        'Test User',
+    org:         'Test Org',
+    role:        'Tester',
+    orgLocation: 'Test',
+    email:       'test@example.com',
+    phone:       ''
+  },
+
   // How many rows of leaderboard to show on the intro + end screen.
   LEADERBOARD_ROWS: 10,
 

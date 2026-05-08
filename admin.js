@@ -132,6 +132,7 @@
     const easyDefaults = { totalCards: 15, traditionalCount: 3, mcqOptions: 3, distractorScope: 'sameClass', showHint: true };
     const hardDefaults = { totalCards: 25, traditionalCount: 4, mcqOptions: 5, distractorScope: 'mixed',     showHint: false };
     return {
+      testEnabled: false,
       difficulty: {
         easy: Object.assign({}, easyDefaults, (CFG.DIFFICULTY && CFG.DIFFICULTY.easy) || {}),
         hard: Object.assign({}, hardDefaults, (CFG.DIFFICULTY && CFG.DIFFICULTY.hard) || {})
@@ -303,6 +304,7 @@
     const s = state.data.settings || defaultSettings();
     const e = (s.difficulty && s.difficulty.easy) || {};
     const h = (s.difficulty && s.difficulty.hard) || {};
+    $('#s-test-enabled').checked = !!s.testEnabled;
     $('#s-easy-total').value = e.totalCards || 15;
     $('#s-easy-trad').value  = e.traditionalCount != null ? e.traditionalCount : 3;
     $('#s-easy-mcq').value   = e.mcqOptions || 3;
@@ -329,6 +331,7 @@
 
   async function saveSettings() {
     const settings = {
+      testEnabled: $('#s-test-enabled').checked,
       difficulty: {
         easy: readDiffProfileFromForm('easy', { totalCards: 15, mcqOptions: 3 }),
         hard: readDiffProfileFromForm('hard', { totalCards: 25, mcqOptions: 5 })

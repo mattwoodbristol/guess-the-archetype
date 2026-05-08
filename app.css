@@ -1025,6 +1025,7 @@ a:hover { text-decoration: underline; }
 }
 .diff-pill.easy { background: rgba(178,237,209,0.18); color: var(--mint); }
 .diff-pill.hard { background: rgba(255,0,128,0.16); color: var(--ter-pink); }
+.diff-pill.test { background: rgba(247,228,202,0.18); color: var(--wheat); border: 1px dashed rgba(247,228,202,0.55); }
 
 /* ---- card actions: skip button styling ---- */
 .card .actions { gap: 10px; }

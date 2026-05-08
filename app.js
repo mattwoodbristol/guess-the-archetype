@@ -121,7 +121,12 @@
   function effectiveSettings(data, remote) {
     const localS = (data && data.settings && data.settings.difficulty) || {};
     const remoteS = (remote && remote.difficulty) || {};
+    const testEnabled = !!(
+      (remote && remote.testEnabled) ||
+      (data && data.settings && data.settings.testEnabled)
+    );
     return {
+      testEnabled,
       difficulty: {
         easy: mergeProfile('easy', localS.easy, remoteS.easy),
         hard: mergeProfile('hard', localS.hard, remoteS.hard)
@@ -553,8 +558,28 @@
     });
     $('#btn-share').addEventListener('click', shareResult);
 
+    // Test play (admin-controlled)
+    const testBtn = $('#btn-test-play');
+    if (testBtn && game.settings && game.settings.testEnabled) {
+      testBtn.style.display = '';
+      testBtn.addEventListener('click', runTestPlay);
+    }
+
     // Top-10 leaderboard on intro screen
     loadIntroLeaderboard();
+  }
+
+  function runTestPlay() {
+    const tp = (CFG.TEST_PLAYER) || {
+      name: 'Test User', org: 'Test Org', role: 'Tester',
+      orgLocation: 'Test', email: 'test@example.com', phone: ''
+    };
+    game.player = Object.assign({}, tp);
+    game.difficulty = 'test';
+    saveJSON(LS.lastDiff, game.difficulty);
+    buildDeck();
+    show('screen-game');
+    renderCurrent();
   }
 
   function onIntroSubmit(e) {
@@ -591,7 +616,13 @@
   }
 
   function buildDeck() {
-    const profile = game.settings.difficulty[game.difficulty] || game.settings.difficulty.easy;
+    // Test plays piggy-back on the easy profile but use a tiny deck for speed.
+    let profile;
+    if (game.difficulty === 'test') {
+      profile = Object.assign({}, game.settings.difficulty.easy, { totalCards: 5, traditionalCount: 1 });
+    } else {
+      profile = game.settings.difficulty[game.difficulty] || game.settings.difficulty.easy;
+    }
     const total = profile.totalCards;
     const tradTarget = profile.traditionalCount;
     const nsTarget = total - tradTarget;
@@ -645,7 +676,8 @@
     mount.innerHTML = '';
 
     const card = game.cards[i];
-    const diffSettings = game.settings.difficulty[game.difficulty] || game.settings.difficulty.easy;
+    const diffSettings = game.settings.difficulty[game.difficulty]
+      || game.settings.difficulty.easy;  // test plays render with easy-mode UI
     const builder = card.kind === 'mcq'
       ? buildMcqCard(card.pick, game.types.nonStandard, diffSettings)
       : buildTradCard(card.pick);
@@ -782,6 +814,12 @@
 
   function renderLeaderboardTable(mount, rows, opts) {
     const me = game.player;
+    // Hide test plays from the embedded boards (they have their own filter on leaderboard.html).
+    rows = (rows || []).filter(r => (r.difficulty || '').toLowerCase() !== 'test');
+    if (!rows.length) {
+      mount.innerHTML = '<div class="empty">No scores yet — be the first.</div>';
+      return;
+    }
     const table = el('table');
     const thead = el('thead', {}, el('tr', {}, [
       el('th', {}, '#'),
@@ -794,7 +832,7 @@
     rows.forEach((r, i) => {
       const isMe = me && r.name === me.name && r.org === me.org;
       const diff = (r.difficulty || '').toLowerCase();
-      const pillClass = diff === 'hard' ? 'diff-pill hard' : 'diff-pill easy';
+      const pillClass = 'diff-pill ' + (diff === 'hard' ? 'hard' : diff === 'test' ? 'test' : 'easy');
       const pillText = diff ? diff.toUpperCase() : '—';
       const profile = (game.settings && game.settings.difficulty && r.difficulty)
         ? game.settings.difficulty[String(r.difficulty).toLowerCase()] : null;

@@ -29,9 +29,10 @@
 
     <div class="lb-table-wrap">
       <div class="lb-filter" id="lb-filter">
-        <button class="chip active" data-filter="all">All players</button>
+        <button class="chip active" data-filter="all">Real plays</button>
         <button class="chip" data-filter="easy">Easy only</button>
         <button class="chip" data-filter="hard">Hard only</button>
+        <button class="chip" data-filter="test">Test plays</button>
       </div>
       <div id="lb-mount">
         <div class="empty">Loading leaderboard…</div>
@@ -89,8 +90,10 @@
       function renderTable() {
         const mount = $('#lb-mount');
         let rows = allRows;
+        if (filter === 'all')  rows = rows.filter(r => (r.difficulty || '').toLowerCase() !== 'test');
         if (filter === 'easy') rows = rows.filter(r => (r.difficulty || '').toLowerCase() === 'easy');
         if (filter === 'hard') rows = rows.filter(r => (r.difficulty || '').toLowerCase() === 'hard');
+        if (filter === 'test') rows = rows.filter(r => (r.difficulty || '').toLowerCase() === 'test');
         if (!rows.length) {
           mount.innerHTML = '<div class="empty">No plays match this filter yet.</div>';
           return;
@@ -106,7 +109,7 @@
         const tbody = el('tbody');
         rows.forEach((r, i) => {
           const diff = (r.difficulty || '').toLowerCase();
-          const pillClass = diff === 'hard' ? 'diff-pill hard' : 'diff-pill easy';
+          const pillClass = 'diff-pill ' + (diff === 'hard' ? 'hard' : diff === 'test' ? 'test' : 'easy');
           const pillText = diff ? diff.toUpperCase() : '—';
           const tr = el('tr', {}, [
             el('td', { class: 'rank' }, String(i + 1)),
