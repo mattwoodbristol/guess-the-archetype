@@ -121,10 +121,12 @@
   function effectiveSettings(data, remote) {
     const localS = (data && data.settings && data.settings.difficulty) || {};
     const remoteS = (remote && remote.difficulty) || {};
-    const testEnabled = !!(
-      (remote && remote.testEnabled) ||
-      (data && data.settings && data.settings.testEnabled)
-    );
+    // Remote (Apps Script Settings tab) is authoritative when present. Local
+    // is only a fallback for offline. Otherwise unticking the admin toggle
+    // never propagates because a previously-cached `true` would win.
+    const testEnabled = remote
+      ? !!remote.testEnabled
+      : !!(data && data.settings && data.settings.testEnabled);
     return {
       testEnabled,
       difficulty: {
@@ -541,16 +543,8 @@
       node.textContent = bits.join(' · ');
     });
 
-    // Prefill returning player
-    const last = loadJSON(LS.lastPlayer, null);
-    if (last) {
-      $('#f-name').value = last.name || '';
-      $('#f-org').value = last.org || '';
-      $('#f-role').value = last.role || '';
-      $('#f-org-location').value = last.orgLocation || '';
-      $('#f-email').value = last.email || '';
-      $('#f-phone').value = last.phone || '';
-    }
+    // Intentionally not prefilling player details — shared devices (events, kiosks)
+    // need a fresh form for each visitor.
 
     // End-screen buttons
     $('#btn-replay').addEventListener('click', () => {
@@ -598,8 +592,11 @@
     if (err) { errEl.textContent = err; errEl.style.display = ''; return; }
     errEl.style.display = 'none';
     game.player = player;
-    saveJSON(LS.lastPlayer, player);
+    // Player details are NOT persisted (shared-device privacy); we only remember
+    // the player's chosen difficulty so a returning visitor gets the same default.
     saveJSON(LS.lastDiff, game.difficulty);
+    // Clean up any legacy stored details so they stop leaking on devices that played before this fix.
+    try { localStorage.removeItem(LS.lastPlayer); } catch (e) {}
 
     buildDeck();
     show('screen-game');
